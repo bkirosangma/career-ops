@@ -18,15 +18,138 @@
         print-color-adjust: exact;
       }
 
+      /* ===== Design tokens ===== */
+      :root {
+        --ink: #1a1a1a;
+        --muted: #5a6573;
+        --accent: #3d4a5c;
+        --rule: #d4d8de;
+        --tint: #f6f7f9;
+      }
+
       /* ===== Page rules ===== */
       .page {
         page-break-after: always;
         break-after: page;
         min-height: 700pt; /* keeps empty pages full-height during scaffold; ignored once content overflows */
+        padding-top: 4pt;
       }
       .page:last-of-type {
         page-break-after: auto;
         break-after: auto;
+      }
+
+      /* ===== Typography ===== */
+      h1.section-title {
+        font-size: 22pt;
+        font-weight: 700;
+        color: var(--ink);
+        margin: 0 0 10pt 0;
+        letter-spacing: -0.01em;
+      }
+      h2.subhead {
+        font-size: 13pt;
+        font-weight: 600;
+        color: var(--accent);
+        margin: 16pt 0 4pt 0;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      h3.cap {
+        font-size: 12pt;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 14pt 0 4pt 0;
+      }
+      p { margin: 0 0 8pt 0; }
+      ul.proof {
+        list-style: none;
+        margin: 0 0 6pt 0;
+        padding: 0;
+      }
+      ul.proof li {
+        position: relative;
+        padding-left: 14pt;
+        margin: 0 0 6pt 0;
+      }
+      ul.proof li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 8pt;
+        width: 6pt;
+        height: 1.5pt;
+        background: var(--accent);
+      }
+
+      /* ===== Common components ===== */
+      .accent-rule {
+        width: 36pt;
+        height: 2pt;
+        background: var(--accent);
+        margin: 0 0 12pt 0;
+      }
+      .lede {
+        font-size: 12pt;
+        line-height: 1.55;
+        color: var(--ink);
+        margin: 0 0 16pt 0;
+        max-width: 90%;
+      }
+      .callout {
+        background: var(--tint);
+        border-left: 3pt solid var(--accent);
+        padding: 12pt 14pt;
+        margin: 0 0 18pt 0;
+        font-size: 10.5pt;
+        line-height: 1.5;
+        color: var(--ink);
+      }
+      .callout em { font-style: normal; font-weight: 600; }
+
+      /* ===== Capability tile grid (Page 1) ===== */
+      .tiles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12pt;
+        margin-top: 6pt;
+      }
+      .tile {
+        border: 1pt solid var(--rule);
+        border-radius: 4pt;
+        padding: 14pt;
+      }
+      .tile-head {
+        display: flex;
+        align-items: center;
+        gap: 10pt;
+        margin-bottom: 6pt;
+      }
+      .tile-head svg {
+        width: 26pt;
+        height: 26pt;
+        color: var(--accent);
+        flex-shrink: 0;
+      }
+      .tile-head .tile-title {
+        font-size: 11.5pt;
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .tile-body {
+        font-size: 10pt;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      /* ===== Closing line ===== */
+      .closing {
+        margin-top: 18pt;
+        padding-top: 12pt;
+        border-top: 1pt solid var(--rule);
+        font-size: 11pt;
+        font-style: italic;
+        color: var(--ink);
       }
     </style>
   </head>
