@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Engineering Capabilities — Sportstech</title>
+    <style>
+      /* ===== Reset & base ===== */
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                     Roboto, "Helvetica Neue", Arial, sans-serif;
+        color: #1a1a1a;
+        font-size: 11pt;
+        line-height: 1.5;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      /* ===== Page rules ===== */
+      .page {
+        page-break-after: always;
+        break-after: page;
+        min-height: 700pt; /* keeps empty pages full-height during scaffold; ignored once content overflows */
+      }
+      .page:last-of-type {
+        page-break-after: auto;
+        break-after: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="page" id="page-1"></section>
+    <section class="page" id="page-2"></section>
+    <section class="page" id="page-3"></section>
+  </body>
+</html>
