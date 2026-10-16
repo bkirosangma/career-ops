@@ -22,7 +22,7 @@ import { collectApplications, renderApplications, APPLICATIONS_CSS, APPLICATIONS
 
 export const CAPS = { pending: 100, evaluated: 50 };
 export const APPLY_MIN = 2.5;
-const AGENTS = ['scout', 'researcher', 'writer', 'applier', 'watcher', 'prospector', 'coach'];
+const AGENTS = ['scout-boards', 'scout-ats', 'researcher', 'writer', 'applier', 'watcher', 'prospector', 'coach'];
 const STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Hired', 'Rejected', 'Discarded', 'SKIP'];
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
