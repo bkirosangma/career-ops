@@ -138,7 +138,13 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   }).join('');
   const pendingRows = pipeline.pending.slice(0, 100).map((p) => `<tr><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" rel="noopener">${esc(p.title || p.url)}</a></td><td>${esc(p.location)}</td><td>${esc(p.posted)}</td></tr>`).join('');
   const coachCards = coach.index.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="prio">P${esc(s.priority)}</span> ${esc(s.subject)} <span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span> <em>${(s.applications || []).length} application(s)</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => `<li>${esc(a.tracker || '')} ${esc(a.company || '')} — ${esc(a.role || '')} <em>${esc(a.status || '')}</em></li>`).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
-  const draftCards = freelance.drafts.map((d) => `<details class="draft"><summary>${esc(d.title)} <span class="tag draft">${esc(d.channel || 'draft')}</span> <em>${esc(d.to)}</em></summary><pre>${esc(d.body)}</pre></details>`).join('');
+  const draftCards = freelance.drafts.map((d) => {
+    const isEmail = /^email$/i.test(d.channel) && /@/.test(d.to);
+    const action = isEmail
+      ? `<button class="btn send" data-action="send" data-draft="${esc(d.file)}">Send email to ${esc(d.to)}</button>`
+      : `<button class="btn copy" data-action="copy" data-draft="${esc(d.file)}">Copy message</button> <button class="btn mark" data-action="approve" data-draft="${esc(d.file)}">Mark sent in ${esc(d.channel || 'app')}</button>`;
+    return `<details class="draft" id="draft-${esc(d.file)}"><summary>${esc(d.title)} <span class="tag draft">${esc(d.channel || 'draft')}</span> <em>${esc(d.to)}</em></summary><div class="actions">${action} <span class="result"></span></div><pre data-body>${esc(d.body)}</pre></details>`;
+  }).join('');
   const sentRows = freelance.sent.slice(-50).reverse().map((c) => `<tr>${c.slice(0, 5).map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('');
   const leadRows = freelance.leads.slice(-100).reverse().map((c) => `<tr>${c.slice(0, 6).map((x, i) => `<td>${i === 2 && /^https?:/.test(x) ? `<a href="${esc(x)}" rel="noopener">link</a>` : esc(x)}</td>`).join('')}</tr>`).join('');
 
@@ -166,6 +172,7 @@ tr.error td:first-child{color:var(--bad)}tr.ok td:first-child{color:var(--ok)}tr
 .state{font-size:12px;padding:1px 7px;border-radius:6px;background:var(--chip)}.s-Applied,.s-Responded,.s-Interview,.s-Offer,.s-Hired{background:var(--ok);color:#fff}.s-Rejected,.s-Discarded,.s-SKIP{opacity:.65}
 ul{margin:6px 0;padding-left:20px}li{margin:3px 0}em{color:var(--mut);font-style:normal;font-size:12px}
 details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}.prio{font-weight:700;color:var(--acc)}pre{white-space:pre-wrap;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:10px;border-radius:8px}
+.btn{font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}.btn.send{background:var(--ok);color:#fff;border-color:transparent}.btn.mark{background:var(--warm);color:#000;border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:12px;color:var(--mut)}
 .md{font-size:14px}.empty{color:var(--mut);font-style:italic}.pill{background:var(--bad);color:#fff;padding:2px 8px;border-radius:999px;font-size:12px}
 </style></head><body><main>
 <header><h1>Career Ops Board</h1><div class="meta">generated ${esc(generatedAt)} · auto-refresh 5 min${freelance.paused ? ' · <span class="pill">freelance paused</span>' : ''}</div></header>
@@ -192,7 +199,22 @@ details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6
 <section><h2>Pending leads (${pipeline.pending.length})</h2><div class="wrap">${pendingRows ? `<table><thead><tr><th>company</th><th>title</th><th>location</th><th>posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">Queue empty — Scout will fill it.</p>'}</div></section>
 
 <section><h2>Agent history</h2><div class="wrap"><table><thead><tr><th>when</th><th>agent</th><th>status</th><th>took</th><th>note</th></tr></thead><tbody>${heartbeat.history.slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${h.seconds}s</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div></section>
-</main></body></html>`;
+</main>
+<script>
+// One-click actions. Each click is the user's own send; the agents never call these endpoints.
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button[data-action]'); if (!b) return;
+  const card = b.closest('details'); const out = card.querySelector('.result'); const draft = b.dataset.draft;
+  if (b.dataset.action === 'copy') { try { await navigator.clipboard.writeText(card.querySelector('[data-body]').textContent); out.textContent = 'copied'; } catch { out.textContent = 'copy failed — select the text'; } return; }
+  if (b.dataset.action === 'send' && !confirm('Send this email now?')) return;
+  b.disabled = true; out.textContent = 'working…';
+  try {
+    const r = await fetch('/api/' + b.dataset.action, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ draft }) });
+    const j = await r.json(); out.textContent = j.result || j.error || r.status;
+    if (r.ok) setTimeout(() => location.reload(), 1200); else b.disabled = false;
+  } catch (e) { out.textContent = 'request failed: ' + e.message; b.disabled = false; }
+});
+</script></body></html>`;
 }
 
 export function collect(root) {
