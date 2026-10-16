@@ -26,7 +26,7 @@ export function buildQuery(days) {
   const from = ATS_SENDERS.map((d) => `from:${d}`).join(' OR ');
   const subj = SUBJECT_TERMS.map((t) => (t.includes(' ') ? `subject:"${t}"` : `subject:${t}`)).join(' OR ');
   const excl = EXCLUDE_SENDERS.map((d) => `-from:${d}`).join(' ');
-  return `newer_than:${days}d -from:me -category:promotions -category:social -category:updates -category:forums ${excl} (${from} OR ${subj})`;
+  return `newer_than:${days}d -from:me -category:promotions -category:social -category:forums ${excl} (${from} OR ${subj})`;
 }
 
 export function headersToMap(headers = []) {
