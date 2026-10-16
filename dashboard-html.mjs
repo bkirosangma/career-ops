@@ -184,7 +184,7 @@ details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6
 <section><h2>Freelance</h2>
 <h3>Drafts awaiting you (${freelance.drafts.length})</h3>${draftCards || '<p class="empty">No drafts.</p>'}
 <h3>Sent (${freelance.sent.length})</h3><div class="wrap">${sentRows ? `<table><thead><tr><th>when</th><th>channel</th><th>to</th><th>lead</th><th>result</th></tr></thead><tbody>${sentRows}</tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}</div>
-<h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>title</th><th>budget</th><th>feasible</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>
+<h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>link</th><th>title</th><th>budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>
 </section>
 
 <section><h2>Applications (${tracker.rows.length})</h2><div class="wrap"><table><thead><tr><th>#</th><th>date</th><th>company</th><th>role</th><th>score</th><th>state</th><th>PDF</th><th>report</th><th>notes</th></tr></thead><tbody>${appRows}</tbody></table></div></section>
