@@ -13,7 +13,7 @@ one on the Mac, one nightly. Each agent reads one queue and writes the next; que
 | Researcher | Lenovo, every 2h | Sonnet 5.5 | Pending → `reports/` + tracker Evaluated | `oferta`/`auto-pipeline`, `deep`, liveness |
 | Writer | Lenovo, after new Evaluated | Opus 5.5 only | Evaluated → `output/*.pdf`, PDF ✅ | `pdf`, `_writing.md`, `keyword-match.mjs`, `ats` |
 | Applier | Mac, interactive | Opus 5.5 | PDF ✅ → tracker Applied (+followup-seed) | `apply` — user clicks Submit |
-| Watcher | Lenovo, every 3h | Haiku 4.5 | Gmail → tracker state + `data/agent-inbox.md` | `reply-watch`, gmail plugin, `followup`, `set-status.mjs` |
+| Watcher | Lenovo, every 3h | Sonnet 5.5 (was Haiku; switched 2026-10-17 after a misread rejection) | Gmail → tracker state + `data/agent-inbox.md` | `reply-watch`, gmail plugin, `followup`, `set-status.mjs` |
 | Prospector (freelance) | Lenovo, every 4h | Sonnet 5.5 (feasibility + draft) | freelance sources → `data/freelance/leads.tsv` → `data/freelance/outreach/*.md` (drafts) → dashboard Approve queue | new; `contacto`/`email` drafting rules, `voice-dna.md` |
 | Coach | Lenovo, nightly | Opus 5.5 | reports (Evaluated+) → `interview-prep/coach/*.md` | `upskill.mjs`, `jd-skill-gap.mjs`, question-bank |
 
