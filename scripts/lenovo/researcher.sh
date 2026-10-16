@@ -39,6 +39,7 @@ timeout 110m "$BATCH/batch-runner.sh" --cli claude --model "$MODEL_SONNET" --par
 rc=$?
 set -e
 node merge-tracker.mjs >>"$LOG" 2>&1 || log "WARN: merge-tracker"
+mkdir -p "$DATA/batch" && cp -f "$BATCH/batch-state.tsv" "$DATA/batch/batch-state.tsv" 2>/dev/null  # reconcile resolves state inside the Data Root
 node reconcile-pipeline.mjs >>"$LOG" 2>&1 || log "WARN: reconcile-pipeline"
 # Seed follow-ups + status ledger are handled by set-status/outcome paths; nothing to do here.
 
