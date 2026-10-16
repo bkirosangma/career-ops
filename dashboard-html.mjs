@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { collectApplications, renderApplications, APPLICATIONS_CSS, APPLICATIONS_JS } from './dashboard-applications.mjs';
 
 export const CAPS = { pending: 100, evaluated: 50 };
 export const APPLY_MIN = 2.5;
@@ -120,7 +121,7 @@ const mdLite = (md) => esc(md)
   .replace(/\n{2,}/g, '<br><br>');
 
 export function render(data, { now = Date.now(), generatedAt = new Date(now).toISOString() } = {}) {
-  const { tracker, pipeline, heartbeat, inbox, freelance, coach } = data;
+  const { tracker, pipeline, heartbeat, inbox, freelance, coach, apps = [] } = data;
   const funnel = STATES.map((s) => `<div class="stat"><b>${tracker.byState[s] || 0}</b><span>${esc(s)}</span></div>`).join('');
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
@@ -128,14 +129,9 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
     return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(h.status) : 'never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? `${h.seconds}s` : ''}</td><td>${esc(h?.note || '')}</td></tr>`;
   }).join('');
   const needs = [
-    ...tracker.readyToApply.map((r) => `<li><span class="tag apply">apply</span> #${r.num} ${esc(r.company)} — ${esc(r.role)} <em>${esc(r.score)}</em></li>`),
-    ...freelance.drafts.filter((d) => !/^auto/i.test(d.channel)).map((d) => `<li><span class="tag draft">send</span> ${esc(d.title)} <em>${esc(d.channel)}</em></li>`),
+    ...(freelance.paused ? [] : freelance.drafts).filter((d) => !/^auto/i.test(d.channel)).map((d) => `<li><span class="tag draft">send</span> ${esc(d.title)} <em>${esc(d.channel)}</em></li>`),
     ...inbox.map((i) => `<li><span class="tag inbox">inbox</span> ${esc(i)}</li>`),
   ];
-  const appRows = [...tracker.rows].sort((a, b) => b.num - a.num).map((r) => {
-    const rep = (r.report.match(/\(([^)]+)\)/) || [])[1];
-    return `<tr><td>#${r.num}</td><td>${esc(r.date)}</td><td>${esc(r.company)}</td><td>${esc(r.role)}</td><td class="num">${esc(r.score)}</td><td><span class="state s-${esc(r.status)}">${esc(r.status)}</span></td><td>${/✅/.test(r.pdf) ? '✅' : '—'}</td><td>${rep ? `<a href="${esc(rep.replace(/^\.\.\//, '../'))}">report</a>` : ''}</td><td class="notes">${esc(r.notes)}</td></tr>`;
-  }).join('');
   const pendingRows = pipeline.pending.slice(0, 100).map((p) => `<tr><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" rel="noopener">${esc(p.title || p.url)}</a></td><td>${esc(p.location)}</td><td>${esc(p.posted)}</td></tr>`).join('');
   const coachCards = coach.index.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="prio">P${esc(s.priority)}</span> ${esc(s.subject)} <span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span> <em>${(s.applications || []).length} application(s)</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => `<li>${esc(a.tracker || '')} ${esc(a.company || '')} — ${esc(a.role || '')} <em>${esc(a.status || '')}</em></li>`).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
   const draftCards = freelance.drafts.map((d) => {
@@ -173,28 +169,29 @@ tr.error td:first-child{color:var(--bad)}tr.ok td:first-child{color:var(--ok)}tr
 ul{margin:6px 0;padding-left:20px}li{margin:3px 0}em{color:var(--mut);font-style:normal;font-size:12px}
 details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}.prio{font-weight:700;color:var(--acc)}pre{white-space:pre-wrap;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:10px;border-radius:8px}
 .btn{font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}.btn.send{background:var(--ok);color:#fff;border-color:transparent}.btn.mark{background:var(--warm);color:#000;border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:12px;color:var(--mut)}
-.md{font-size:14px}.empty{color:var(--mut);font-style:italic}.pill{background:var(--bad);color:#fff;padding:2px 8px;border-radius:999px;font-size:12px}
+.md{font-size:14px}.empty{color:var(--mut);font-style:italic}.pill-alert{background:var(--bad);color:#fff;padding:2px 8px;border-radius:999px;font-size:12px}
+.needs-hint{font-size:13px;color:var(--mut);margin:0 0 6px}${APPLICATIONS_CSS}
 </style></head><body><main>
-<header><h1>Career Ops Board</h1><div class="meta">generated ${esc(generatedAt)} · auto-refresh 5 min${freelance.paused ? ' · <span class="pill">freelance paused</span>' : ''}</div></header>
+<header><h1>Career Ops Board</h1><div class="meta">generated ${esc(generatedAt)} · auto-refresh 5 min${freelance.paused ? ' · <span class="pill-alert">freelance paused</span>' : ''}</div></header>
 
 <div class="grid">
 <section><h2>Queues</h2>${gauge('Scout → Pending leads', pipeline.pending.length, CAPS.pending)}<br>${gauge('Research → Evaluated', tracker.byState.Evaluated || 0, CAPS.evaluated)}<p class="meta">Awaiting CV (≥ ${APPLY_MIN}): ${tracker.awaitingCv.length} · Ready to apply: ${tracker.readyToApply.length}</p></section>
 <section><h2>Funnel</h2><div class="stats">${funnel}</div></section>
 </div>
 
-<section><h2>Needs you (${needs.length})</h2>${needs.length ? `<ul>${needs.join('')}</ul>` : '<p class="empty">Nothing waiting on you.</p>'}</section>
+<section><h2>Needs you (${needs.length + tracker.readyToApply.length})</h2>${tracker.readyToApply.length ? `<p class="needs-hint"><a href="#applications">${tracker.readyToApply.length} application(s) ready to apply</a> — see Applications below.</p>` : ''}${needs.length ? `<ul>${needs.join('')}</ul>` : (tracker.readyToApply.length ? '' : '<p class="empty">Nothing waiting on you.</p>')}</section>
+
+${renderApplications(apps)}
 
 <section><h2>Agents</h2><div class="wrap"><table><thead><tr><th>agent</th><th>last status</th><th>when</th><th>took</th><th>note</th></tr></thead><tbody>${agentRows}</tbody></table></div></section>
 
 <section><h2>Learn — interview prep</h2>${coach.summary ? `<div class="md">${mdLite(coach.summary)}</div>` : '<p class="empty">Coach has not run yet.</p>'}${coachCards}</section>
 
-<section><h2>Freelance</h2>
+<section><details class="stage"${freelance.paused ? '' : ' open'}><summary><span>Freelance</span>${freelance.paused ? ' <em>paused — data/freelance/PAUSE</em>' : ''}</summary>
 <h3>Drafts awaiting you (${freelance.drafts.length})</h3>${draftCards || '<p class="empty">No drafts.</p>'}
 <h3>Sent (${freelance.sent.length})</h3><div class="wrap">${sentRows ? `<table><thead><tr><th>when</th><th>channel</th><th>to</th><th>lead</th><th>result</th></tr></thead><tbody>${sentRows}</tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}</div>
 <h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>link</th><th>title</th><th>budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>
-</section>
-
-<section><h2>Applications (${tracker.rows.length})</h2><div class="wrap"><table><thead><tr><th>#</th><th>date</th><th>company</th><th>role</th><th>score</th><th>state</th><th>PDF</th><th>report</th><th>notes</th></tr></thead><tbody>${appRows}</tbody></table></div></section>
+</details></section>
 
 <section><h2>Pending leads (${pipeline.pending.length})</h2><div class="wrap">${pendingRows ? `<table><thead><tr><th>company</th><th>title</th><th>location</th><th>posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">Queue empty — Scout will fill it.</p>'}</div></section>
 
@@ -214,10 +211,13 @@ document.addEventListener('click', async (ev) => {
     if (r.ok) setTimeout(() => location.reload(), 1200); else b.disabled = false;
   } catch (e) { out.textContent = 'request failed: ' + e.message; b.disabled = false; }
 });
+${APPLICATIONS_JS}
 </script></body></html>`;
 }
 
-export function collect(root) {
+export function collect(root) { return collectAll(root); }
+
+function collectBase(root) {
   return {
     tracker: collectTracker(read(path.join(root, 'data', 'applications.md'))),
     pipeline: collectPipeline(read(path.join(root, 'data', 'pipeline.md'))),
@@ -226,6 +226,12 @@ export function collect(root) {
     freelance: collectFreelance(root),
     coach: collectCoach(root),
   };
+}
+
+function collectAll(root) {
+  const d = collectBase(root);
+  try { d.apps = collectApplications(root, d.tracker.rows); } catch (e) { console.error(`applications view failed: ${e.message}`); d.apps = []; }
+  return d;
 }
 
 function main() {

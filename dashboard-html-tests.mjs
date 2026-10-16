@@ -44,8 +44,10 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
   assert.doesNotMatch(html, /<script>x<\/script>/);
   assert.match(html, /&lt;script&gt;x/);
   assert.match(html, new RegExp(`2 / ${CAPS.evaluated}`));
-  for (const h of ['Queues', 'Funnel', 'Needs you', 'Agents', 'Learn', 'Freelance', 'Applications', 'Pending leads']) assert.match(html, new RegExp(`<h2>${h}`));
-  assert.match(html, /tag apply">apply<\/span> #1 Acme/);
+  for (const h of ['Queues', 'Funnel', 'Needs you', 'Agents', 'Learn', 'Applications', 'Pending leads']) assert.match(html, new RegExp(`<h2>${h}`));
+  assert.match(html, /<span>Freelance<\/span>/);
+  assert.match(html, /1 application\(s\) ready to apply/);
+  assert.match(html, /data-stage="ready"[^>]*open[\s\S]*?<strong>Acme<\/strong>/);
   const empty = render(collect(mkdtempSync(path.join(tmpdir(), 'dash-empty-'))));
   assert.match(empty, /Nothing waiting on you/);
   assert.match(empty, /prefers-color-scheme:dark/);
