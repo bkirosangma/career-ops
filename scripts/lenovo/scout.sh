@@ -22,9 +22,31 @@ fi
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 pending_urls > "$tmp/before.txt"
 
-log "ATS sweep (since ${SINCE_DAYS}d, pending $before/$CAP)"
-resume=""; [[ -f "$DATA/data/cache/ats-full-checkpoint.json" ]] && resume="--resume"
-timeout 110m node scan-ats-full.mjs --since "$SINCE_DAYS" $resume >>"$LOG" 2>&1 || log "WARN: scan-ats-full exited $? (timeout or error; checkpoint keeps progress)"
+# Full-ATS sweep, one ATS family per run (a whole-world sweep takes 3h+, and scan-ats-full only
+# writes its matches when a sweep COMPLETES — a timeout keeps them in the checkpoint, unwritten).
+# Rotation state: data/.scout-rotation holds the ATS currently in flight. A checkpoint is always
+# resumed with the flags that wrote it (scan-ats-full refuses mismatched flags).
+ROTATION=(greenhouse lever ashby icims workday)
+STATE="$DATA/data/.scout-rotation"
+CHECKPOINT="$DATA/data/cache/ats-full-checkpoint.json"
+if [[ -f "$CHECKPOINT" ]]; then
+  ats="$(cat "$STATE" 2>/dev/null || true)"     # empty = legacy whole-world checkpoint
+  args=(--since "$SINCE_DAYS" --resume); [[ -n "$ats" ]] && args+=(--ats "$ats")
+  log "resuming ATS sweep ${ats:-all} (pending $before/$CAP)"
+else
+  last="$(cat "$STATE.last" 2>/dev/null || echo workday)"
+  next="${ROTATION[0]}"
+  for i in "${!ROTATION[@]}"; do [[ "${ROTATION[$i]}" == "$last" ]] && next="${ROTATION[$(( (i + 1) % ${#ROTATION[@]} ))]}"; done
+  ats="$next"; echo "$ats" > "$STATE"
+  args=(--since "$SINCE_DAYS" --ats "$ats")
+  log "ATS sweep: $ats (pending $before/$CAP)"
+fi
+if timeout "${SCOUT_SWEEP_TIMEOUT:-230m}" node scan-ats-full.mjs "${args[@]}" >>"$LOG" 2>&1; then
+  [[ -n "$ats" ]] && echo "$ats" > "$STATE.last"; rm -f "$STATE"
+  log "ATS sweep ${ats:-all} complete"
+else
+  log "WARN: scan-ats-full ${ats:-all} exited $? (checkpoint keeps its matches; next run resumes)"
+fi
 log "portals.yml scan"
 timeout 25m node scan.mjs >>"$LOG" 2>&1 || log "WARN: scan.mjs exited $?"
 
@@ -41,8 +63,9 @@ if (( new > 0 )); then
   : > "$tmp/verdicts.tsv"
   for chunk in "$tmp"/chunk.*; do
     cat "$REPO/scripts/lenovo/prompts/scout-triage.md" "$chunk" > "$tmp/prompt.md"
-    claude -p --model "$MODEL_HAIKU" --output-format text --disallowedTools "Bash" "WebFetch" "WebSearch" "Write" "Edit" \
-      "$(cat "$tmp/prompt.md")" 2>>"$LOG" | grep -E '^https?://' >> "$tmp/verdicts.tsv" || log "WARN: triage chunk failed"
+    # prompt via stdin: --disallowedTools is variadic and would swallow a positional prompt
+    claude -p --model "$MODEL_HAIKU" --output-format text --disallowedTools "Bash,WebFetch,WebSearch,Write,Edit" \
+      < "$tmp/prompt.md" 2>>"$LOG" | grep -E '^https?://' >> "$tmp/verdicts.tsv" || log "WARN: triage chunk failed"
   done
   result=$(node scripts/lenovo/apply-triage.mjs "$tmp/verdicts.tsv" --pipeline "$PIPELINE")
   log "triage: $result"
