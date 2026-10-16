@@ -276,3 +276,6 @@ batch/tmp/
 !documents/.gitkeep
 !documents/README.md
 data/agent-inbox.md
+
+# local-only harness memory (data-root directive on servers)
+CLAUDE.local.md
