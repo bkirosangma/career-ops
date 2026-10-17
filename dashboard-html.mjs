@@ -131,6 +131,10 @@ ${row(box((b.Offer || 0) + (b.Hired || 0), 'Offer', { tone: 'go' }))}
 </div></section>`;
 }
 
+// A full-width panel with switchable tabs; the whole panel collapses (<details>). Tab choice and
+// open/closed state are remembered per viewer in localStorage (see the script at the bottom).
+const tabbed = (id, tabs) => `<section class="tabbed" id="${id}"><details open><summary><span class="tabs">${tabs.map(([k, label], i) => `<button type="button" class="tab${i ? '' : ' on'}" data-tab="${k}">${label}</button>`).join('')}</span><span class="fold"></span></summary>${tabs.map(([k, , html], i) => `<div class="pane" data-pane="${k}"${i ? ' hidden' : ''}>${html}</div>`).join('')}</details></section>`;
+
 const ago = (ts, now) => {
   const t = Date.parse(String(ts).replace(' ', 'T'));
   if (isNaN(t)) return '';
@@ -198,29 +202,38 @@ details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6
 .fbox.mut{border-style:dashed;border-color:var(--mut)}.fbox.go{border-color:var(--ok)}
 .frow:not(:last-child) .fbox::after{content:'↓';position:absolute;left:50%;bottom:-24px;font-size:18px;color:var(--mut)}.frow .fbox{overflow:visible}.frow .fbox i{border-radius:8px 0 0 8px}
 .fside{display:flex;flex-wrap:wrap;gap:6px}.fdrop{font-size:13px;color:var(--mut);border:1px dashed var(--line);border-radius:8px;padding:4px 10px}.fdrop::before{content:'↘ '}.fdrop b{color:var(--ink)}
-@media(max-width:640px){.frow{grid-template-columns:1fr}}${APPLICATIONS_CSS}
+@media(max-width:640px){.frow{grid-template-columns:1fr}}
+.cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}.col{min-width:0}@media(max-width:900px){.cols{grid-template-columns:1fr}}
+.cols .frow{grid-template-columns:minmax(0,1fr) minmax(0,.8fr)}
+.tabbed>details{border:0;padding:0;margin:0}.tabbed summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.tabbed summary::-webkit-details-marker{display:none}
+.tabs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.tab{font:inherit;font-size:14px;font-weight:600;padding:6px 14px;border:0;background:var(--card);color:var(--mut);cursor:pointer}.tab+.tab{border-left:1px solid var(--line)}.tab.on{background:var(--chip);color:var(--ink)}
+.fold::after{content:'▾ collapse';font-size:12px;color:var(--mut)}.tabbed details:not([open]) .fold::after{content:'▸ expand'}.pane{margin-top:10px}${APPLICATIONS_CSS}
 </style></head><body><main>
 <header><h1>Career Ops Board</h1><div class="meta">generated ${esc(generatedAt)} · auto-refresh 5 min${freelance.paused ? ' · <span class="pill-alert">freelance paused</span>' : ''}</div></header>
 
-${renderFlow(data)}
+${tabbed('ops', [
+  ['agents', 'Agents', `<div class="wrap"><table><thead><tr><th>agent</th><th>last status</th><th>when</th><th>took</th><th>note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
+  ['history', 'History', `<div class="wrap"><table><thead><tr><th>when</th><th>agent</th><th>status</th><th>took</th><th>note</th></tr></thead><tbody>${heartbeat.history.slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${h.seconds}s</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
+])}
 
+<div class="cols">
+<div class="col">
 <section><h2>Needs you (${needs.length + tracker.readyToApply.length})</h2>${tracker.readyToApply.length ? `<p class="needs-hint"><a href="#applications">${tracker.readyToApply.length} application(s) ready to apply</a> — see Applications below.</p>` : ''}${needs.length ? `<ul>${needs.join('')}</ul>` : (tracker.readyToApply.length ? '' : '<p class="empty">Nothing waiting on you.</p>')}</section>
-
 <section><h2>Learn — interview prep</h2>${coach.summary ? `<div class="md">${mdLite(coach.summary)}</div>` : '<p class="empty">Coach has not run yet.</p>'}${coachCards}</section>
-
+</div>
+<div class="col">
+${renderFlow(data)}
 ${renderApplications(apps)}
+</div>
+</div>
 
-<section><h2>Agents</h2><div class="wrap"><table><thead><tr><th>agent</th><th>last status</th><th>when</th><th>took</th><th>note</th></tr></thead><tbody>${agentRows}</tbody></table></div></section>
-
-<section><details class="stage"${freelance.paused ? '' : ' open'}><summary><span>Freelance</span>${freelance.paused ? ' <em>paused — data/freelance/PAUSE</em>' : ''}</summary>
+${tabbed('leads', [
+  ['pending', `Pending leads (${pipeline.pending.length})`, `<div class="wrap">${pendingRows ? `<table><thead><tr><th>company</th><th>title</th><th>location</th><th>posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">Queue empty — Scout will fill it.</p>'}</div>`],
+  ['freelance', `Freelance${freelance.paused ? ' (paused)' : ''}`, `${freelance.paused ? '<p class="empty">Paused — data/freelance/PAUSE</p>' : ''}
 <h3>Drafts awaiting you (${freelance.drafts.length})</h3>${draftCards || '<p class="empty">No drafts.</p>'}
 <h3>Sent (${freelance.sent.length})</h3><div class="wrap">${sentRows ? `<table><thead><tr><th>when</th><th>channel</th><th>to</th><th>lead</th><th>result</th></tr></thead><tbody>${sentRows}</tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}</div>
-<h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>link</th><th>title</th><th>budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>
-</details></section>
-
-<section><h2>Pending leads (${pipeline.pending.length})</h2><div class="wrap">${pendingRows ? `<table><thead><tr><th>company</th><th>title</th><th>location</th><th>posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">Queue empty — Scout will fill it.</p>'}</div></section>
-
-<section><h2>Agent history</h2><div class="wrap"><table><thead><tr><th>when</th><th>agent</th><th>status</th><th>took</th><th>note</th></tr></thead><tbody>${heartbeat.history.slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${h.seconds}s</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div></section>
+<h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>link</th><th>title</th><th>budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>`],
+])}
 </main>
 <script>
 // One-click actions. Each click is the user's own send; the agents never call these endpoints.
@@ -237,6 +250,16 @@ document.addEventListener('click', async (ev) => {
   } catch (e) { out.textContent = 'request failed: ' + e.message; b.disabled = false; }
 });
 ${APPLICATIONS_JS}
+// Tabbed panels: switch tab without toggling the <details>; remember tab + open state.
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+for (const sec of document.querySelectorAll('section.tabbed')) {
+  const det = sec.querySelector('details');
+  const show = (k) => { if (!sec.querySelector('[data-pane="' + k + '"]')) return; sec.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === k)); sec.querySelectorAll('.pane').forEach((p) => { p.hidden = p.dataset.pane !== k; }); };
+  const tab = store.get('tab:' + sec.id); if (tab) show(tab);
+  if (store.get('open:' + sec.id) === '0') det.open = false;
+  sec.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', (e) => { e.preventDefault(); show(t.dataset.tab); det.open = true; store.set('tab:' + sec.id, t.dataset.tab); store.set('open:' + sec.id, '1'); }));
+  det.addEventListener('toggle', () => store.set('open:' + sec.id, det.open ? '1' : '0'));
+}
 </script></body></html>`;
 }
 
