@@ -260,7 +260,7 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
     const r = running[a];
-    if (r) return `<tr class="run"><td>${esc(a)}</td><td><span class="spin" aria-hidden="true"></span>Working${r.total ? `, ${r.done} of ${r.total}` : ''}</td><td>for ${dur(r.seconds)}</td><td></td><td>${esc(r.last || '')}</td></tr>`;
+    if (r) return `<tr class="run"><td>${esc(a)}</td><td><span class="spin" aria-hidden="true"></span>Working${r.total ? `, ${r.done} of ${r.total}` : ''}</td><td>for ${dur(r.seconds)}</td><td></td><td>${mdInline(esc(r.last || ''))}</td></tr>`;
     const cls = agentState(a);
     return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(STATE_WORD[cls]) : 'Never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? dur(h.seconds) : ''}</td><td>${mdInline(esc(h?.note || ''))}</td></tr>`;
   }).join('');
