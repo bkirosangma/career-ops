@@ -173,7 +173,7 @@ function card(c) {
     ? `<details class="more"><summary>Details</summary>${c.strengths.length ? `<p class="lbl">Strengths</p><ul>${c.strengths.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}${c.gaps.length ? `<p class="lbl">Gaps</p><ul>${c.gaps.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}${c.notes ? `<p class="lbl">Notes</p><p class="notes">${esc(c.notes)}</p>` : ''}</details>`
     : '';
   const search = `${c.company} ${c.role} ${c.status} ${c.notes}`.toLowerCase();
-  return `<article class="app" data-search="${esc(search)}" data-score="${c.score ?? -1}" data-date="${esc(c.date)}" data-num="${c.num}">
+  return `<article class="app" id="app-${c.num}" data-search="${esc(search)}" data-score="${c.score ?? -1}" data-date="${esc(c.date)}" data-num="${c.num}">
 <div class="app-top"><div class="app-title"><strong>${esc(c.company)}</strong><span>${esc(c.role)}</span></div><div class="score s-${scoreClass(c.score)}">${c.score != null ? c.score.toFixed(1) : '—'}</div></div>
 <div class="app-meta"><span class="muted">#${c.num} · ${esc(c.date)} · <span class="state s-${esc(c.status)}">${esc(c.status)}</span></span>${meta}</div>
 ${c.nextAction ? `<p class="next"><b>Next:</b> ${esc(c.nextAction)}</p>` : ''}
@@ -226,6 +226,7 @@ export const APPLICATIONS_JS = `
       if(term && shown) st.open=true;
     });
   }
+  window.__appsApply=apply;
   q.addEventListener('input',apply); sort.addEventListener('change',function(){ try{localStorage.setItem(KEY,sort.value);}catch(e){} apply(); });
   apply();
 })();`;

@@ -3,7 +3,10 @@
 //
 //   node scripts/lenovo/board-server.mjs [--port 8080] [--root <data-root>]
 //
-// GET  /                          → output/dashboard/index.html
+// GET  /                          → the board, rendered live from the Data Root on each request
+// GET  /api/version                → {"version": "<hash of the current board>"}
+// GET  /api/events                 → Server-Sent Events: "version" whenever the board changes
+//                                    (data files watched + a 15 s tick for running-agent progress)
 // GET  /<path>                    → static files from the Data Root (reports/, output/, data/freelance/outreach/)
 // POST /api/send   {"draft": "<file>.md"}   → send that outreach draft by email, log it, move it to outreach/sent/
 // POST /api/approve {"draft": "<file>.md"}  → mark a platform draft as "sent by me in-app" (log + move), no email
@@ -16,11 +19,14 @@
 // Credentials come from the environment (secrets.env): OUTREACH_EMAIL, OUTREACH_SMTP_PASS.
 import http from 'node:http';
 import tls from 'node:tls';
-import { readFileSync, existsSync, statSync, createReadStream, appendFileSync, renameSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, createReadStream, appendFileSync, renameSync, mkdirSync, writeFileSync, watch } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { getCareerOpsRoot } from '../../path-resolver.mjs';
+import { collect, render } from '../../dashboard-html.mjs';
+import { collectRunning } from './live-state.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const args = process.argv.slice(2);
@@ -129,6 +135,44 @@ function regenerate() {
   try { execFileSync('node', [path.join(REPO, 'dashboard-html.mjs'), '--out', path.join(ROOT, 'output', 'dashboard', 'index.html')], { stdio: 'ignore', env: { ...process.env, CAREER_OPS_ROOT: ROOT } }); return true; } catch { return false; }
 }
 
+// ---- live board --------------------------------------------------------------------------------
+// The page is rendered from the files on every change; its version is a hash of the render with the
+// clock rounded to the minute, so "3m ago" labels move once a minute and nothing else churns.
+let board = { html: '', version: '', at: 0 };
+export function versionOf(html) { return createHash('sha1').update(html).digest('hex').slice(0, 12); }
+function buildBoard() {
+  const now = Math.floor(Date.now() / 60000) * 60000;
+  const data = collect(ROOT);
+  data.running = collectRunning(ROOT);
+  for (const r of Object.values(data.running)) r.seconds = Math.floor(r.seconds / 60) * 60;  // minute buckets
+  const html = render(data, { now, generatedAt: new Date(now).toISOString(), live: true });
+  const version = versionOf(html);
+  board = { html: html.replace('<main>', `<main data-version="${version}">`), version, at: Date.now() };
+  return board;
+}
+const clients = new Set();
+function refreshBoard() {
+  const before = board.version;
+  try { buildBoard(); } catch (e) { console.error(`render failed: ${e.message}`); return; }
+  if (board.version !== before) for (const res of clients) res.write(`event: version\ndata: ${board.version}\n\n`);
+}
+let pending = null;
+const soon = () => { clearTimeout(pending); pending = setTimeout(refreshBoard, 1500); };  // debounce bursts of writes
+function startWatching() {
+  for (const dir of ['data', 'reports', 'output', 'interview-prep']) {
+    const full = path.join(ROOT, dir);
+    if (!existsSync(full)) continue;
+    try {
+      watch(full, { recursive: true }, (_ev, file) => {
+        if (!file || /(^|\/)(\.git|\.locks|dashboard)(\/|$)|\.tmp-\d+$|\.bak$/.test(String(file))) return;
+        soon();
+      });
+    } catch (e) { console.error(`watch ${dir}: ${e.message}`); }
+  }
+  setInterval(refreshBoard, 15000);  // running-agent progress and minute labels
+  setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000);  // keep proxies/phones from idling the stream out
+}
+
 function readBody(req) { return new Promise((res) => { let b = ''; req.on('data', (c) => { b += c; if (b.length > 1e5) req.destroy(); }); req.on('end', () => res(b)); }); }
 
 const server = http.createServer(async (req, res) => {
@@ -141,12 +185,23 @@ const server = http.createServer(async (req, res) => {
     else if (url.pathname === '/api/approve') out = await handleSend(String(body.draft || ''), { approveOnly: true });
     else if (url.pathname === '/api/regenerate') out = { status: 200, result: regenerate() ? 'regenerated' : 'failed' };
     else return json(404, { error: 'unknown action' });
-    if (out.status === 200) regenerate();
+    if (out.status === 200) { regenerate(); refreshBoard(); }
     return json(out.status, out);
   }
   if (req.method !== 'GET') return json(405, { error: 'method' });
+  if (url.pathname === '/' || url.pathname === '/index.html') {
+    if (Date.now() - board.at > 2000) buildBoard();
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(board.html);
+  }
+  if (url.pathname === '/api/version') { if (!board.version) buildBoard(); return json(200, { version: board.version }); }
+  if (url.pathname === '/api/events') {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', connection: 'keep-alive' });
+    res.write(`retry: 5000\nevent: version\ndata: ${board.version}\n\n`);
+    clients.add(res); req.on('close', () => clients.delete(res));
+    return;
+  }
   let rel = decodeURIComponent(url.pathname);
-  if (rel === '/' || rel === '/index.html') rel = '/output/dashboard/index.html';
   const file = path.normalize(path.join(ROOT, rel));
   if (!file.startsWith(ROOT + path.sep) || !existsSync(file) || !statSync(file).isFile()) { res.writeHead(404); return res.end('not found'); }
   res.writeHead(200, { 'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'cache-control': 'no-store' });
@@ -155,5 +210,6 @@ const server = http.createServer(async (req, res) => {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (!existsSync(path.join(ROOT, 'output', 'dashboard', 'index.html'))) regenerate();
-  server.listen(PORT, '0.0.0.0', () => console.log(`board-server: ${ROOT} on :${PORT}`));
+  buildBoard(); startWatching();
+  server.listen(PORT, '0.0.0.0', () => console.log(`board-server: ${ROOT} on :${PORT} (live)`));
 }

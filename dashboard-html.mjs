@@ -148,10 +148,51 @@ const mdLite = (md) => esc(md)
   .replace(/^(?:- |\* )(.+)$/gm, '<li>$1</li>').replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
   .replace(/\n{2,}/g, '<br><br>');
 
-export function render(data, { now = Date.now(), generatedAt = new Date(now).toISOString() } = {}) {
+const dur = (s) => (s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`);
+
+// Live mode (board-server): no meta refresh; the page listens on /api/events and morphs <main> in place.
+const LIVE_JS = `
+(function(){
+  var main=document.querySelector('main'), ind=document.getElementById('live'), ver=main.dataset.version, busy=false, again=false, es=null;
+  function mark(t,c){ ind.textContent=t; ind.className='live '+c; }
+  function keep(attr,el){
+    if(attr==='open'&&el.tagName==='DETAILS') return false;          // folded/unfolded by the viewer
+    if(attr==='hidden'&&el.classList.contains('pane')) return false; // chosen tab
+    if(attr==='class'&&el.classList.contains('tab')) return false;
+    return true;
+  }
+  async function refresh(){
+    if(busy){ again=true; return; } busy=true;
+    try{
+      var html=await (await fetch('/',{cache:'no-store'})).text();
+      var next=new DOMParser().parseFromString(html,'text/html').querySelector('main');
+      if(!window.Idiomorph||!next){ location.reload(); return; }
+      Idiomorph.morph(main,next,{morphStyle:'outerHTML',ignoreActiveValue:true,callbacks:{beforeAttributeUpdated:function(a,el){ return keep(a,el); }}});
+      main=document.querySelector('main'); ver=main.dataset.version;
+      if(window.__appsApply) window.__appsApply();
+      mark('● live · updated '+new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),'on');
+    }catch(e){ mark('● update failed, retrying','off'); }
+    busy=false; if(again){ again=false; refresh(); }
+  }
+  function onVersion(v){ if(v&&v!==ver) refresh(); }
+  function connect(){
+    if(!window.EventSource) return;
+    es=new EventSource('/api/events');
+    es.addEventListener('version',function(e){ mark(ind.className.indexOf('on')>-1?ind.textContent:'● live','on'); onVersion(e.data); });
+    es.onerror=function(){ mark('● reconnecting · checking every 30 s','off'); };
+  }
+  setInterval(async function(){ if(es&&es.readyState===1) return; try{ onVersion((await (await fetch('/api/version',{cache:'no-store'})).json()).version); }catch(e){} },30000);
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden) fetch('/api/version',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){ onVersion(j.version); }).catch(function(){}); });
+  connect();
+})();`;
+
+export function render(data, { now = Date.now(), generatedAt = new Date(now).toISOString(), live = false } = {}) {
   const { tracker, pipeline, heartbeat, inbox, freelance, coach, apps = [] } = data;
+  const running = data.running || {};
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
+    const r = running[a];
+    if (r) return `<tr class="run"><td>${esc(a)}</td><td><span class="spin"></span>running${r.total ? ` · ${r.done}/${r.total}` : ''}</td><td>for ${dur(r.seconds)}</td><td></td><td>${esc(r.last || '')}</td></tr>`;
     const cls = !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'skip' ? 'skip' : 'ok';
     return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(h.status) : 'never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? `${h.seconds}s` : ''}</td><td>${esc(h?.note || '')}</td></tr>`;
   }).join('');
@@ -174,7 +215,7 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Career Ops Board</title>
-<meta http-equiv="refresh" content="300">
+${live ? '<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>' : '<meta http-equiv="refresh" content="300">'}
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#5f6b7a;--line:#e3e7ec;--acc:#2f6fed;--ok:#1f9d55;--warm:#d98e04;--bad:#d64545;--chip:#eef2f7}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1318;--card:#171c23;--ink:#e6e9ee;--mut:#9aa6b2;--line:#263040;--acc:#6ea0ff;--ok:#3fbf7f;--warm:#f2b33d;--bad:#ff6b6b;--chip:#1f2833}}
@@ -208,12 +249,14 @@ details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6
 .tabbed>details{border:0;padding:0;margin:0}.tabbed summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.tabbed summary::-webkit-details-marker{display:none}
 .tabs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.tab{font:inherit;font-size:14px;font-weight:600;padding:6px 14px;border:0;background:var(--card);color:var(--mut);cursor:pointer}.tab+.tab{border-left:1px solid var(--line)}.tab.on{background:var(--chip);color:var(--ink)}
 .fold::after{content:'▾ collapse';font-size:12px;color:var(--mut)}.tabbed details:not([open]) .fold::after{content:'▸ expand'}.pane{margin-top:10px}${APPLICATIONS_CSS}
-</style></head><body><main>
-<header><h1>Career Ops Board</h1><div class="meta">generated ${esc(generatedAt)} · auto-refresh 5 min${freelance.paused ? ' · <span class="pill-alert">freelance paused</span>' : ''}</div></header>
+.live{position:fixed;right:12px;bottom:12px;z-index:9;font-size:12px;padding:4px 10px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--mut)}.live.on{color:var(--ok)}.live.off{color:var(--warm)}
+tr.run td:first-child{color:var(--acc);font-weight:600}.spin{display:inline-block;width:9px;height:9px;margin-right:6px;border:2px solid var(--acc);border-right-color:transparent;border-radius:50%;animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+</style></head><body>${live ? '<div id="live" class="live">● connecting…</div>' : ''}<main>
+<header><h1>Career Ops Board</h1><div class="meta">${live ? `${Object.keys(running).length ? `${Object.keys(running).length} agent(s) running · ` : ''}` : `generated ${esc(generatedAt)} · auto-refresh 5 min`}${freelance.paused ? ' · <span class="pill-alert">freelance paused</span>' : ''}</div></header>
 
 ${tabbed('ops', [
   ['agents', 'Agents', `<div class="wrap"><table><thead><tr><th>agent</th><th>last status</th><th>when</th><th>took</th><th>note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
-  ['history', 'History', `<div class="wrap"><table><thead><tr><th>when</th><th>agent</th><th>status</th><th>took</th><th>note</th></tr></thead><tbody>${heartbeat.history.slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${h.seconds}s</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
+  ['history', 'History', `<div class="wrap"><table><thead><tr><th>when</th><th>agent</th><th>status</th><th>took</th><th>note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${h.seconds}s</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
 ])}
 
 <div class="cols">
@@ -250,16 +293,21 @@ document.addEventListener('click', async (ev) => {
   } catch (e) { out.textContent = 'request failed: ' + e.message; b.disabled = false; }
 });
 ${APPLICATIONS_JS}
-// Tabbed panels: switch tab without toggling the <details>; remember tab + open state.
+// Tabbed panels: switch tab without toggling the <details>; remember tab + open state. Delegated, so
+// it keeps working after live updates replace parts of the page.
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+const showTab = (sec, k) => { if (!sec.querySelector('[data-pane="' + k + '"]')) return; sec.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === k)); sec.querySelectorAll('.pane').forEach((p) => { p.hidden = p.dataset.pane !== k; }); };
 for (const sec of document.querySelectorAll('section.tabbed')) {
-  const det = sec.querySelector('details');
-  const show = (k) => { if (!sec.querySelector('[data-pane="' + k + '"]')) return; sec.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.tab === k)); sec.querySelectorAll('.pane').forEach((p) => { p.hidden = p.dataset.pane !== k; }); };
-  const tab = store.get('tab:' + sec.id); if (tab) show(tab);
-  if (store.get('open:' + sec.id) === '0') det.open = false;
-  sec.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', (e) => { e.preventDefault(); show(t.dataset.tab); det.open = true; store.set('tab:' + sec.id, t.dataset.tab); store.set('open:' + sec.id, '1'); }));
-  det.addEventListener('toggle', () => store.set('open:' + sec.id, det.open ? '1' : '0'));
+  const tab = store.get('tab:' + sec.id); if (tab) showTab(sec, tab);
+  if (store.get('open:' + sec.id) === '0') sec.querySelector('details').open = false;
 }
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('section.tabbed .tab'); if (!t) return;
+  e.preventDefault(); const sec = t.closest('section.tabbed');
+  showTab(sec, t.dataset.tab); sec.querySelector('details').open = true; store.set('tab:' + sec.id, t.dataset.tab); store.set('open:' + sec.id, '1');
+});
+document.addEventListener('toggle', (e) => { const sec = e.target.parentElement; if (sec && sec.matches && sec.matches('section.tabbed')) store.set('open:' + sec.id, e.target.open ? '1' : '0'); }, true);
+${live ? LIVE_JS : ''}
 </script></body></html>`;
 }
 
