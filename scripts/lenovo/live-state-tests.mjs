@@ -24,3 +24,8 @@ test('progressFromLog reads the current run only', () => {
     ℹ️  JD prefetch: 90 words written to JD file`;
   assert.deepEqual(progressFromLog(log), { total: 13, done: 2, last: 'Processing offer #9: https://x/y (report 3, attempt 1)' });
 });
+
+test('progressFromLog keeps only the latest frame of a carriage-return progress line', () => {
+  const log = '[2026-10-17 08:00:01] scout-ats: start (repo=r data=d)\n  200/8333 scanned, 0 matches\r  400/8333 scanned, 1 matches\r';
+  assert.equal(progressFromLog(log).last, '400/8333 scanned, 1 matches');
+});

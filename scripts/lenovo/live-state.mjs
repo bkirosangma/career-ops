@@ -25,7 +25,7 @@ export function parseProcs(psText) {
 
 // From the current run's slice of the log: researcher progress (done / total) and the last thing it said.
 export function progressFromLog(logText) {
-  const lines = logText.split('\n');
+  const lines = logText.split('\n').map((l) => l.split('\r').filter((x) => x.trim()).pop() || '');  // progress bars rewrite with \r
   let start = -1;
   for (let i = lines.length - 1; i >= 0; i--) if (/\]\s[\w-]+: start \(/.test(lines[i])) { start = i; break; }
   const run = start === -1 ? [] : lines.slice(start);
