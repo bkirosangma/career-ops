@@ -142,12 +142,32 @@ const ago = (ts, now) => {
   return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`;
 };
 
-const mdLite = (md) => esc(md)
-  .replace(/^### (.+)$/gm, '<h4>$1</h4>').replace(/^## (.+)$/gm, '<h3>$1</h3>').replace(/^# (.+)$/gm, '<h3>$1</h3>')
-  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, t, h) => (/^https?:/.test(h) ? `<a href="${h}" target="_blank" rel="noopener">${t}</a>` : /^[\w./-]+\.md$/.test(h) ? `<a href="/interview-prep/coach/${h}" target="_blank">${t}</a>` : t))
-  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>')
-  .replace(/^(?:- |\* )(.+)$/gm, '<li>$1</li>').replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
-  .replace(/\n{2,}/g, '<br><br>');
+// Minimal Markdown for the Coach's files: headings, bullet and numbered lists, paragraphs (single
+// newlines kept as line breaks), bold, code and links. Input is escaped first.
+const mdInline = (t) => t
+  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, x, h) => (/^https?:/.test(h) ? `<a href="${h}" target="_blank" rel="noopener">${x}</a>` : /^[\w./-]+\.md$/.test(h) ? `<a href="/interview-prep/coach/${h}" target="_blank">${x}</a>` : x))
+  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+export function mdLite(md) {
+  const out = []; let list = null; let para = [];
+  const flushPara = () => { if (para.length) out.push(`<p>${para.map(mdInline).join('<br>')}</p>`); para = []; };
+  const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${mdInline(i)}</li>`).join('')}</${list.tag}>`); list = null; };
+  for (const raw of esc(md).split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    const h = line.match(/^(#{1,4}) (.+)$/), ul = line.match(/^\s*[-*] (.+)$/), ol = line.match(/^\s*\d+[.)] (.+)$/);
+    if (!line.trim()) { flushPara(); flushList(); continue; }
+    if (h) { flushPara(); flushList(); out.push(`<${h[1].length <= 2 ? 'h3' : 'h4'}>${mdInline(h[2])}</${h[1].length <= 2 ? 'h3' : 'h4'}>`); continue; }
+    if (ul || ol) {
+      flushPara(); const tag = ul ? 'ul' : 'ol';
+      if (list && list.tag !== tag) flushList();
+      if (!list) list = { tag, items: [] };
+      list.items.push((ul || ol)[1]); continue;
+    }
+    if (list && /^\s{2,}/.test(raw)) { list.items[list.items.length - 1] += ' ' + line.trim(); continue; }  // wrapped list item
+    flushList(); para.push(line);
+  }
+  flushPara(); flushList();
+  return out.join('\n');
+}
 
 const dur = (s) => (s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`);
 
@@ -250,7 +270,7 @@ ul,ol{margin:6px 0;padding-left:20px}li{margin:4px 0}em{color:var(--slate);font-
 details{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}
 pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:var(--tint);padding:10px;border-radius:8px}
 .btn{font:inherit;font-size:14px;padding:6px 12px;border-radius:8px;border:1px solid var(--rule);background:var(--tint);color:var(--ink);cursor:pointer}.btn.send{background:var(--go);color:var(--on-go);border-color:transparent}.btn.mark{background:var(--wait);color:var(--on-wait);border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:13px;color:var(--slate)}
-.md{font-size:15px;max-width:72ch}
+.md{font-size:15px;max-width:72ch}.md p{margin:8px 0}.md ol,.md ul{padding-left:22px}.md li{margin:6px 0}.md h3{color:var(--ink);font-size:16px;margin:18px 0 6px}
 /* Needs you */
 .qs{list-style:none;padding:0}.qs li{padding:10px 12px;border-left:3px solid var(--wait);background:var(--tint);border-radius:0 8px 8px 0;margin:6px 0;font-size:15px}
 .nxs{list-style:none;padding:0;margin:4px 0}.nx{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}.nx:last-child{border-bottom:0}

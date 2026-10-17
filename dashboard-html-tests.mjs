@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { collect, collectPipeline, collectHeartbeat, collectTracker, render, CAPS } from './dashboard-html.mjs';
+import { collect, collectPipeline, collectHeartbeat, collectTracker, render, CAPS, mdLite } from './dashboard-html.mjs';
 
 const TRACKER = `# Applications Tracker
 
@@ -53,4 +53,9 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
   const empty = render(collect(mkdtempSync(path.join(tmpdir(), 'dash-empty-'))));
   assert.match(empty, /Nothing is waiting on you/);
   assert.match(empty, /prefers-color-scheme:dark/);
+});
+
+test('mdLite: numbered and bullet lists, line breaks, links, escaping', () => {
+  const html = mdLite('## Top 2 this week\n\n1. **[Kafka](kafka.md)** (P5): one\n2. Go ramp: two\n\nNext in line: a\nsecond line\n\n- x <b>\n- y');
+  assert.equal(html, '<h3>Top 2 this week</h3>\n<ol><li><strong><a href="/interview-prep/coach/kafka.md" target="_blank">Kafka</a></strong> (P5): one</li><li>Go ramp: two</li></ol>\n<p>Next in line: a<br>second line</p>\n<ul><li>x &lt;b&gt;</li><li>y</li></ul>');
 });
