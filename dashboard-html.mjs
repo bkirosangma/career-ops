@@ -262,7 +262,7 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
     const r = running[a];
     if (r) return `<tr class="run"><td>${esc(a)}</td><td><span class="spin" aria-hidden="true"></span>Working${r.total ? `, ${r.done} of ${r.total}` : ''}</td><td>for ${dur(r.seconds)}</td><td></td><td>${esc(r.last || '')}</td></tr>`;
     const cls = agentState(a);
-    return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(STATE_WORD[cls]) : 'Never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? dur(h.seconds) : ''}</td><td>${esc(h?.note || '')}</td></tr>`;
+    return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(STATE_WORD[cls]) : 'Never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? dur(h.seconds) : ''}</td><td>${mdInline(esc(h?.note || ''))}</td></tr>`;
   }).join('');
   const strip = `<span class="strip" aria-label="Agent status">${AGENTS.filter((a) => !(a === 'prospector' && freelance.paused)).map((a) => { const st = agentState(a); return `<span class="ag ag-${st}" title="${esc(a)}: ${STATE_WORD[st]}">${esc(a)}</span>`; }).join('')}</span>`;
   const linkify = (t) => esc(t).replace(/https?:\/\/[^\s<]+/g, (u) => { let host = u; try { const x = new URL(u.replace(/&amp;/g, '&')); host = x.hostname.replace(/^www\./, '') + (x.pathname.length > 1 ? x.pathname.split('/').slice(0, 2).join('/') : ''); } catch {} return `<a href="${u}" target="_blank" rel="noopener noreferrer">${host}</a>`; });
@@ -364,7 +364,7 @@ tr.run td:first-child{color:var(--link);font-weight:700}.spin{display:inline-blo
 
 ${tabbed('ops', [
   ['agents', 'Agents', `<div class="wrap"><table class="rows"><thead><tr><th>Agent</th><th>State</th><th>When</th><th>Took</th><th>Note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
-  ['history', 'History', `<div class="wrap"><table class="rows"><thead><tr><th>When</th><th>Agent</th><th>State</th><th>Took</th><th>Note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${dur(Number(h.seconds) || 0)}</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
+  ['history', 'History', `<div class="wrap"><table class="rows"><thead><tr><th>When</th><th>Agent</th><th>State</th><th>Took</th><th>Note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${dur(Number(h.seconds) || 0)}</td><td>${mdInline(esc(h.note))}</td></tr>`).join('')}</tbody></table></div>`],
 ], { open: false, strip })}
 
 <div class="cols">
