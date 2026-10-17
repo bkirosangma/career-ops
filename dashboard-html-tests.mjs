@@ -43,8 +43,9 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
   const html = render(collect(root), { now: Date.parse('2026-10-17T05:00:00Z') });
   assert.doesNotMatch(html, /<script>x<\/script>/);
   assert.match(html, /&lt;script&gt;x/);
-  assert.match(html, new RegExp(`2 / ${CAPS.evaluated}`));
-  for (const h of ['Queues', 'Funnel', 'Needs you', 'Agents', 'Learn', 'Applications', 'Pending leads']) assert.match(html, new RegExp(`<h2>${h}`));
+  assert.match(html, new RegExp(`<b>2<small> / ${CAPS.evaluated}</small></b><span>Fit`));
+  assert.ok(html.indexOf('<h2>Learn') < html.indexOf('id="applications"'), 'Learn sits above Applications');
+  for (const h of ['Flow', 'Needs you', 'Agents', 'Learn', 'Applications', 'Pending leads']) assert.match(html, new RegExp(`<h2>${h}`));
   assert.match(html, /<span>Freelance<\/span>/);
   assert.match(html, /1 application\(s\) ready to apply/);
   assert.match(html, /data-stage="ready"[^>]*open[\s\S]*?<strong>Acme<\/strong>/);

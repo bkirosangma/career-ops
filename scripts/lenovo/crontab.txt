@@ -5,7 +5,7 @@ PATH=/home/kiro/.local/bin:/usr/local/bin:/usr/bin:/bin
 */5 *   * * *    __REPO__/scripts/lenovo/scout-refill.sh >/dev/null 2>&1   # Scout: keep Pending at 100 from the backlog
 */20 *  * * *    __REPO__/scripts/lenovo/scout.sh boards >/dev/null 2>&1   # Scout: companies + remote job boards
 */10 *  * * *    __REPO__/scripts/lenovo/scout.sh ats    >/dev/null 2>&1   # Scout: full ATS sweeps, back to back (lock)
-47  */2 * * *    __REPO__/scripts/lenovo/researcher.sh   >/dev/null 2>&1   # Researcher: Evaluated ≤50 (Sonnet)
+*/15 * * * *   __REPO__/scripts/lenovo/researcher.sh   >/dev/null 2>&1   # Researcher: fit (≥2.5) queue ≤50 (Sonnet)
 5   *   * * *    __REPO__/scripts/lenovo/writer.sh       >/dev/null 2>&1   # Writer: CVs for ≥2.5 (Opus)
 35  */3 * * *    __REPO__/scripts/lenovo/watcher.sh      >/dev/null 2>&1   # Watcher: replies/follow-ups (Sonnet)
 25  */4 * * *    __REPO__/scripts/lenovo/prospector.sh   >/dev/null 2>&1   # Prospector: freelance leads + first contact

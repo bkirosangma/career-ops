@@ -2,20 +2,21 @@
 # Researcher — evaluate Pending leads (A–G report + tracker row) until the Evaluated cap is reached.
 #   Sonnet 5.5 via batch/batch-runner.sh (headless workers, report numbers reserved, tracker merged,
 #   pipeline reconciled). PDFs are left to the Writer (--skip-pdf).
-# Cadence: every 2h. Cap: 50 rows in Evaluated (ruled 2026-10-16). Batch size per run: 10.
+# Cadence: every 15 min (flock keeps runs from overlapping). Cap: 50 fit rows — Evaluated at or above
+# the apply bar (ruled 2026-10-16; below-bar rows never leave Evaluated, so they don't hold slots).
 source "$(dirname "$0")/lib.sh"
 agent_begin researcher || exit 0
 
 CAP="${RESEARCH_CAP:-50}"
-PER_RUN="${RESEARCH_PER_RUN:-10}"
-PARALLEL="${RESEARCH_PARALLEL:-2}"
+PER_RUN="${RESEARCH_PER_RUN:-15}"
+PARALLEL="${RESEARCH_PARALLEL:-3}"
 PIPELINE="$DATA/data/pipeline.md"
 BATCH="$REPO/batch"
 
-evaluated=$(tracker_count Evaluated)
+evaluated=$(fit_count 2.5)
 room=$(( CAP - evaluated ))
 if (( room <= 0 )); then
-  heartbeat skip "evaluated=$evaluated ≥ cap $CAP"
+  heartbeat skip "fit=$evaluated ≥ cap $CAP"
   log "cap reached ($evaluated/$CAP)"; exit 0
 fi
 take=$(( room < PER_RUN ? room : PER_RUN ))
@@ -43,6 +44,6 @@ mkdir -p "$DATA/batch" && cp -f "$BATCH/batch-state.tsv" "$DATA/batch/batch-stat
 node reconcile-pipeline.mjs >>"$LOG" 2>&1 || log "WARN: reconcile-pipeline"
 # Seed follow-ups + status ledger are handled by set-status/outcome paths; nothing to do here.
 
-after=$(tracker_count Evaluated)
+after=$(fit_count 2.5)
 if (( rc != 0 )); then agent_fail "batch-runner rc=$rc; evaluated $evaluated→$after"; fi
-agent_end "evaluated $evaluated→$after (+${#urls[@]} attempted)"
+agent_end "fit $evaluated→$after (+${#urls[@]} attempted)"

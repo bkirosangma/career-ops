@@ -40,7 +40,8 @@ export function collectTracker(text) {
   const score = (r) => { const m = String(r.score).match(/^(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : null; };
   const readyToApply = rows.filter((r) => r.status === 'Evaluated' && (score(r) ?? 0) >= APPLY_MIN && /✅/.test(r.pdf));
   const awaitingCv = rows.filter((r) => r.status === 'Evaluated' && (score(r) ?? 0) >= APPLY_MIN && !/✅/.test(r.pdf));
-  return { rows, byState, readyToApply, awaitingCv, score };
+  const belowBar = rows.filter((r) => r.status === 'Evaluated' && (score(r) ?? 0) < APPLY_MIN);
+  return { rows, byState, readyToApply, awaitingCv, belowBar, score };
 }
 
 export function collectPipeline(text) {
@@ -54,6 +55,13 @@ export function collectPipeline(text) {
     }
   }
   return { pending };
+}
+
+// Scout reserve (data/scout/backlog.md) and what the gate/triage dropped (data/scout/dropped.tsv).
+export function collectScout(backlogText, droppedText) {
+  const reserve = backlogText.split('\n').filter((l) => /^- \[ \] https?:\/\//.test(l)).length;
+  const drops = droppedText.split('\n').slice(1).filter(Boolean).map((l) => l.split('\t')[1] || '');
+  return { reserve, gated: drops.filter((r) => r.startsWith('gate')).length, triaged: drops.filter((r) => r.startsWith('triage')).length };
 }
 
 export function collectHeartbeat(text) {
@@ -101,11 +109,27 @@ export function collectCoach(root) {
 
 // ---------- render ----------
 
-const gauge = (label, n, cap) => {
-  const pct = Math.min(100, Math.round((n / cap) * 100));
-  const tone = pct >= 100 ? 'full' : pct >= 70 ? 'warm' : 'ok';
-  return `<div class="gauge ${tone}"><div class="gauge-head"><span>${esc(label)}</span><strong>${n} / ${cap}</strong></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
-};
+
+// Pipeline flow: main stages top to bottom, drop-offs to the side. Queue stages carry their cap as a fill bar.
+export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, triaged: 0 } }) {
+  const b = tracker.byState;
+  const fit = tracker.awaitingCv.length + tracker.readyToApply.length;
+  const box = (n, label, { cap, note, tone = '' } = {}) => {
+    const pct = cap ? Math.min(100, Math.round((n / cap) * 100)) : 0;
+    return `<div class="fbox ${tone}${cap ? ' queue' : ''}">${cap ? `<i style="width:${pct}%"></i>` : ''}<b>${n}${cap ? `<small> / ${cap}</small>` : ''}</b><span>${esc(label)}</span>${note ? `<em>${esc(note)}</em>` : ''}</div>`;
+  };
+  const side = (items) => items.length ? `<div class="fside">${items.map(([n, label]) => `<div class="fdrop"><b>${n}</b> ${esc(label)}</div>`).join('')}</div>` : '<div class="fside"></div>';
+  const row = (main, drops = []) => `<div class="frow">${main}${side(drops)}</div>`;
+  return `<section id="flow"><h2>Flow</h2><div class="flow">
+${row(box(scout.reserve, 'Reserve — scouted, waiting for a slot', { note: 'tops up the queue every 5 min', tone: 'mut' }), [[scout.gated, 'dropped: region-locked / office abroad'], [scout.triaged, 'dropped: non-technical']])}
+${row(box(pipeline.pending.length, 'Scouted — waiting for the Researcher', { cap: CAPS.pending }))}
+${row(box(tracker.rows.length, 'Researched (all time)'), [[(b.SKIP || 0) + tracker.belowBar.length, `scored below ${APPLY_MIN} or failed a gate`]])}
+${row(box(fit, `Fit ≥ ${APPLY_MIN} — waiting on you`, { cap: CAPS.evaluated, note: `${tracker.awaitingCv.length} CV being written · ${tracker.readyToApply.length} ready to apply` }))}
+${row(box(b.Applied || 0, 'Applied — waiting for a reply', { tone: 'go' }), [[b.Rejected || 0, 'rejected'], [b.Discarded || 0, 'discarded / posting closed']])}
+${row(box((b.Responded || 0) + (b.Interview || 0), 'Responded / interviewing', { tone: 'go' }))}
+${row(box((b.Offer || 0) + (b.Hired || 0), 'Offer', { tone: 'go' }))}
+</div></section>`;
+}
 
 const ago = (ts, now) => {
   const t = Date.parse(String(ts).replace(' ', 'T'));
@@ -122,7 +146,6 @@ const mdLite = (md) => esc(md)
 
 export function render(data, { now = Date.now(), generatedAt = new Date(now).toISOString() } = {}) {
   const { tracker, pipeline, heartbeat, inbox, freelance, coach, apps = [] } = data;
-  const funnel = STATES.map((s) => `<div class="stat"><b>${tracker.byState[s] || 0}</b><span>${esc(s)}</span></div>`).join('');
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
     const cls = !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'skip' ? 'skip' : 'ok';
@@ -157,8 +180,6 @@ main{max-width:1200px;margin:0 auto;padding:16px}header{display:flex;flex-wrap:w
 h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 10px}h3{font-size:15px;margin:14px 0 6px}h4{font-size:14px;margin:10px 0 4px}
 .meta{color:var(--mut);font-size:13px}section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
 .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
-.gauge .gauge-head{display:flex;justify-content:space-between;font-size:13px;color:var(--mut)}.bar{height:8px;background:var(--chip);border-radius:6px;overflow:hidden;margin-top:4px}.bar i{display:block;height:100%;background:var(--ok)}
-.gauge.warm .bar i{background:var(--warm)}.gauge.full .bar i{background:var(--bad)}
 .stats{display:flex;flex-wrap:wrap;gap:8px}.stat{background:var(--chip);border-radius:8px;padding:8px 12px;min-width:92px}.stat b{display:block;font-size:20px}.stat span{font-size:12px;color:var(--mut)}
 table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600}
 .wrap{overflow-x:auto}td.num{white-space:nowrap}td.notes{color:var(--mut);max-width:360px}
@@ -170,22 +191,26 @@ ul{margin:6px 0;padding-left:20px}li{margin:3px 0}em{color:var(--mut);font-style
 details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}.prio{font-weight:700;color:var(--acc)}pre{white-space:pre-wrap;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:10px;border-radius:8px}
 .btn{font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}.btn.send{background:var(--ok);color:#fff;border-color:transparent}.btn.mark{background:var(--warm);color:#000;border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:12px;color:var(--mut)}
 .md{font-size:14px}.empty{color:var(--mut);font-style:italic}.pill-alert{background:var(--bad);color:#fff;padding:2px 8px;border-radius:999px;font-size:12px}
-.needs-hint{font-size:13px;color:var(--mut);margin:0 0 6px}${APPLICATIONS_CSS}
+.needs-hint{font-size:13px;color:var(--mut);margin:0 0 6px}
+.flow{display:flex;flex-direction:column;gap:22px}.frow{display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:10px 18px;align-items:center;position:relative}
+.fbox{position:relative;overflow:hidden;border:2px solid var(--ink);border-radius:10px;padding:10px 14px;background:var(--card)}.fbox i{position:absolute;inset:0 auto 0 0;background:var(--ok);opacity:.18}
+.fbox b{position:relative;font-size:24px;margin-right:8px}.fbox b small{font-size:14px;color:var(--mut)}.fbox span{position:relative;font-weight:600}.fbox em{position:relative;display:block}
+.fbox.mut{border-style:dashed;border-color:var(--mut)}.fbox.go{border-color:var(--ok)}
+.frow:not(:last-child) .fbox::after{content:'↓';position:absolute;left:50%;bottom:-24px;font-size:18px;color:var(--mut)}.frow .fbox{overflow:visible}.frow .fbox i{border-radius:8px 0 0 8px}
+.fside{display:flex;flex-wrap:wrap;gap:6px}.fdrop{font-size:13px;color:var(--mut);border:1px dashed var(--line);border-radius:8px;padding:4px 10px}.fdrop::before{content:'↘ '}.fdrop b{color:var(--ink)}
+@media(max-width:640px){.frow{grid-template-columns:1fr}}${APPLICATIONS_CSS}
 </style></head><body><main>
 <header><h1>Career Ops Board</h1><div class="meta">generated ${esc(generatedAt)} · auto-refresh 5 min${freelance.paused ? ' · <span class="pill-alert">freelance paused</span>' : ''}</div></header>
 
-<div class="grid">
-<section><h2>Queues</h2>${gauge('Scout → Pending leads', pipeline.pending.length, CAPS.pending)}<br>${gauge('Research → Evaluated', tracker.byState.Evaluated || 0, CAPS.evaluated)}<p class="meta">Awaiting CV (≥ ${APPLY_MIN}): ${tracker.awaitingCv.length} · Ready to apply: ${tracker.readyToApply.length}</p></section>
-<section><h2>Funnel</h2><div class="stats">${funnel}</div></section>
-</div>
+${renderFlow(data)}
 
 <section><h2>Needs you (${needs.length + tracker.readyToApply.length})</h2>${tracker.readyToApply.length ? `<p class="needs-hint"><a href="#applications">${tracker.readyToApply.length} application(s) ready to apply</a> — see Applications below.</p>` : ''}${needs.length ? `<ul>${needs.join('')}</ul>` : (tracker.readyToApply.length ? '' : '<p class="empty">Nothing waiting on you.</p>')}</section>
+
+<section><h2>Learn — interview prep</h2>${coach.summary ? `<div class="md">${mdLite(coach.summary)}</div>` : '<p class="empty">Coach has not run yet.</p>'}${coachCards}</section>
 
 ${renderApplications(apps)}
 
 <section><h2>Agents</h2><div class="wrap"><table><thead><tr><th>agent</th><th>last status</th><th>when</th><th>took</th><th>note</th></tr></thead><tbody>${agentRows}</tbody></table></div></section>
-
-<section><h2>Learn — interview prep</h2>${coach.summary ? `<div class="md">${mdLite(coach.summary)}</div>` : '<p class="empty">Coach has not run yet.</p>'}${coachCards}</section>
 
 <section><details class="stage"${freelance.paused ? '' : ' open'}><summary><span>Freelance</span>${freelance.paused ? ' <em>paused — data/freelance/PAUSE</em>' : ''}</summary>
 <h3>Drafts awaiting you (${freelance.drafts.length})</h3>${draftCards || '<p class="empty">No drafts.</p>'}
@@ -225,6 +250,7 @@ function collectBase(root) {
     inbox: collectInbox(read(path.join(root, 'data', 'agent-inbox.md'))),
     freelance: collectFreelance(root),
     coach: collectCoach(root),
+    scout: collectScout(read(path.join(root, 'data', 'scout', 'backlog.md')), read(path.join(root, 'data', 'scout', 'dropped.tsv'))),
   };
 }
 

@@ -116,6 +116,11 @@ tracker_count() { # status
   awk -F'|' -v st="$1" 'NR>3 && $2 ~ /[0-9]/ { s=$7; gsub(/^ +| +$/,"",s); if (s==st) n++ } END { print n+0 }' "$DATA/data/applications.md"
 }
 
+# Evaluated rows at or above the apply bar (score column "X.X/5") — the Researcher's fit queue
+fit_count() { # min-score
+  awk -F'|' -v min="${1:-2.5}" 'NR>3 && $2 ~ /[0-9]/ { s=$7; gsub(/^ +| +$/,"",s); sc=$6; gsub(/^ +|\/.*$/,"",sc); if (s=="Evaluated" && sc+0>=min) n++ } END { print n+0 }' "$DATA/data/applications.md"
+}
+
 # Count "## Pending" bullet entries in pipeline.md
 pending_count() {
   awk '/^## Pending/{p=1;next} /^## /{p=0} p && /^- /{n++} END{print n+0}' "$DATA/data/pipeline.md"
