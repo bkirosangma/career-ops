@@ -2,8 +2,9 @@
 # Researcher — evaluate Pending leads (A–G report + tracker row) until the Evaluated cap is reached.
 #   Sonnet 5.5 via batch/batch-runner.sh (headless workers, report numbers reserved, tracker merged,
 #   pipeline reconciled). PDFs are left to the Writer (--skip-pdf).
-# Cadence: every 15 min (flock keeps runs from overlapping). Cap: 50 fit rows — Evaluated at or above
-# the apply bar (ruled 2026-10-16; below-bar rows never leave Evaluated, so they don't hold slots).
+# Cadence: every 15 min (flock keeps runs from overlapping). Cap: 50 rows in "Fit for you" — Evaluated
+# at or above the apply bar and still without a CV (ruled 2026-10-17; rows with a CV count against the
+# Writer's Ready-to-apply cap instead, and below-bar rows never hold slots).
 source "$(dirname "$0")/lib.sh"
 agent_begin researcher || exit 0
 

@@ -117,10 +117,14 @@ tracker_count() { # status
   awk -F'|' -v st="$1" 'NR>3 && $2 ~ /[0-9]/ { s=$7; gsub(/^ +| +$/,"",s); if (s==st) n++ } END { print n+0 }' "$DATA/data/applications.md"
 }
 
-# Evaluated rows at or above the apply bar (score column "X.X/5") — the Researcher's fit queue
-fit_count() { # min-score
-  awk -F'|' -v min="${1:-2.5}" 'NR>3 && $2 ~ /[0-9]/ { s=$7; gsub(/^ +| +$/,"",s); sc=$6; gsub(/^ +|\/.*$/,"",sc); if (s=="Evaluated" && sc+0>=min) n++ } END { print n+0 }' "$DATA/data/applications.md"
+# Evaluated rows at or above the apply bar (score column "X.X/5"), by CV state (PDF column):
+#   fit_count   → no CV yet ("Fit for you", the Researcher's queue, cap 50)
+#   ready_count → CV made ("Ready to apply", the Writer's queue, cap 25)
+_bar_count() { # min-score pdf-mark
+  awk -F'|' -v min="${1:-2.5}" -v want="$2" 'NR>3 && $2 ~ /[0-9]/ { s=$7; gsub(/^ +| +$/,"",s); sc=$6; gsub(/^ +|\/.*$/,"",sc); p=$8; gsub(/^ +| +$/,"",p); if (s=="Evaluated" && sc+0>=min && p==want) n++ } END { print n+0 }' "$DATA/data/applications.md"
 }
+fit_count()   { _bar_count "${1:-2.5}" "❌"; }
+ready_count() { _bar_count "${1:-2.5}" "✅"; }
 
 # Count "## Pending" bullet entries in pipeline.md
 pending_count() {

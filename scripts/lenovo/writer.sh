@@ -4,11 +4,14 @@
 # Cadence: every 30 min (crontab.txt); a run keeps going until the queue is drained (ruled 2026-10-17),
 #   highest score first and re-reading the tracker each time, so rows the Researcher adds mid-run are
 #   picked up. The agent lock keeps runs from overlapping; a row that fails is not retried in the same run.
+# Cap: stops while "Ready to apply" (Evaluated ≥ APPLY_MIN with a CV) holds READY_CAP rows (25, ruled
+#   2026-10-17); applying frees a slot and the next run carries on.
 source "$(dirname "$0")/lib.sh"
 agent_begin writer || exit 0
 
 APPLY_MIN="${APPLY_MIN:-2.5}"
 TRACKER="$DATA/data/applications.md"
+READY_CAP="${READY_CAP:-25}"
 
 # next_row: num<TAB>score<TAB>report-file of the best Evaluated row ≥ APPLY_MIN with PDF ❌, skipping $SKIP
 next_row() {
@@ -25,6 +28,8 @@ next_row() {
 }
 
 SKIP=""
+ready=$(ready_count "$APPLY_MIN")
+if (( ready >= READY_CAP )); then heartbeat skip "ready to apply full ($ready/$READY_CAP)"; log "ready queue full ($ready/$READY_CAP)"; exit 0; fi
 row=$(next_row)
 if [[ -z "$row" ]]; then heartbeat skip "no Evaluated rows ≥$APPLY_MIN without PDF"; log "nothing to write"; exit 0; fi
 
@@ -47,6 +52,8 @@ while [[ -n "$row" ]]; do
   # A row whose PDF is still ❌ after its turn (failed, or the model stopped short) is not retried this run.
   SKIP="$SKIP $num"
   regen_dashboard; data_push "writer: CV for #$num" || true   # each CV reaches the board and the Mac right away
+  ready=$(ready_count "$APPLY_MIN")
+  if (( ready >= READY_CAP )); then log "ready queue full ($ready/$READY_CAP), stopping"; break; fi
   row=$(next_row)
 done
-agent_end "queue drained: CVs generated $done_n, failed $fail_n"
+agent_end "CVs generated $done_n, failed $fail_n; ready $(ready_count "$APPLY_MIN")/$READY_CAP"

@@ -20,7 +20,7 @@ import { getCareerOpsRoot } from './path-resolver.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import { collectApplications, renderApplications, APPLICATIONS_CSS, APPLICATIONS_JS } from './dashboard-applications.mjs';
 
-export const CAPS = { pending: 100, evaluated: 50 };
+export const CAPS = { pending: 100, evaluated: 50, ready: 25 };
 export const APPLY_MIN = 2.5;
 const AGENTS = ['scout-boards', 'scout-ats', 'researcher', 'writer', 'applier', 'watcher', 'prospector', 'coach'];
 const STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Hired', 'Rejected', 'Discarded', 'SKIP'];
@@ -123,7 +123,7 @@ export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, 
   const b = tracker.byState;
   const inProgress = tracker.awaitingCv.filter((r) => writing.has(String(r.num))).length;
   const waitingCv = tracker.awaitingCv.length - inProgress;
-  const fit = tracker.awaitingCv.length + tracker.readyToApply.length;
+  const readyFull = tracker.readyToApply.length >= CAPS.ready;
   const box = (n, label, { cap, note, tone = '' } = {}) => {
     const pct = cap ? Math.min(100, Math.round((n / cap) * 100)) : 0;
     return `<div class="fbox ${tone}${cap ? ' queue' : ''}">${cap ? `<i style="width:${pct}%" aria-hidden="true"></i>` : ''}<b>${n}${cap ? `<small>/${cap}</small>` : ''}</b><span class="flabel"><span>${esc(label)}</span>${note ? `<em>${esc(note)}</em>` : ''}</span></div>`;
@@ -134,9 +134,9 @@ export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, 
 ${row(box(scout.reserve, 'Reserve', { note: 'Scouted, waiting for a slot in the queue', tone: 'mut' }), [[scout.gated, 'locked to another region or office abroad'], [scout.triaged, 'not a technical role']])}
 ${row(box(pipeline.pending.length, 'Scouted', { cap: CAPS.pending, note: 'Waiting for the Researcher' }))}
 ${row(box(tracker.rows.length, 'Researched', { note: 'All time' }), [[(b.SKIP || 0) + tracker.belowBar.length, `scored below ${APPLY_MIN} or failed a gate`]])}
-${row(box(waitingCv, 'Fit for you', { note: 'Scored 2.5 or higher, waiting for the Writer' }), [[`${fit}/${CAPS.evaluated}`, 'fit slots used; the Researcher pauses at 50']])}
-${row(box(inProgress, 'CV in progress', { note: inProgress ? 'The Writer is making these now' : 'The Writer checks every 30 minutes and drains the queue' }))}
-${row(box(tracker.readyToApply.length, 'Ready to apply', { note: 'CV made, waiting on you', tone: 'you' }))}
+${row(box(waitingCv, 'Fit for you', { cap: CAPS.evaluated, note: 'Scored 2.5 or higher, waiting for a CV. The Researcher pauses at 50.' }))}
+${row(box(inProgress, 'CV in progress', { note: inProgress ? 'The Writer is making this now' : readyFull ? `Paused until Ready to apply drops below ${CAPS.ready}` : 'The Writer checks every 30 minutes' }))}
+${row(box(tracker.readyToApply.length, 'Ready to apply', { cap: CAPS.ready, note: readyFull ? 'Full. Apply to free a slot for the Writer.' : 'CV made, waiting on you', tone: 'you' }))}
 ${row(box(b.Applied || 0, 'Applied', { note: 'Waiting for a reply', tone: 'go' }), [[b.Rejected || 0, 'rejected'], [b.Discarded || 0, 'closed or discarded']])}
 ${row(box((b.Responded || 0) + (b.Interview || 0), 'Talking', { note: 'Replied or interviewing', tone: 'go' }))}
 ${row(box((b.Offer || 0) + (b.Hired || 0), 'Offer', { tone: 'go' }))}

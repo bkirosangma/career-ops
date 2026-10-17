@@ -43,9 +43,8 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
   const html = render(collect(root), { now: Date.parse('2026-10-17T05:00:00Z') });
   assert.doesNotMatch(html, /<script>x<\/script>/);
   assert.match(html, /&lt;script&gt;x/);
-  assert.match(html, /<b>1<\/b><span class="flabel"><span>Fit for you/);
-  assert.match(html, /<b>1<\/b><span class="flabel"><span>Ready to apply/);
-  assert.match(html, new RegExp(`2/${CAPS.evaluated}</b> fit slots used`));
+  assert.match(html, new RegExp(`<b>1<small>/${CAPS.evaluated}</small></b><span class="flabel"><span>Fit for you`));
+  assert.match(html, new RegExp(`<b>1<small>/${CAPS.ready}</small></b><span class="flabel"><span>Ready to apply`));
   assert.ok(html.indexOf('<h2>Learn') < html.indexOf('id="applications"'), 'Learn sits above Applications');
   for (const h of ['Flow', 'Needs you', 'Learn', 'Applications']) assert.match(html, new RegExp(`<h2>${h}`));
   for (const t of ['agents', 'history', 'pending', 'freelance']) assert.match(html, new RegExp(`data-tab="${t}"`));
@@ -68,6 +67,6 @@ test('flow: rows listed in writer-in-progress.txt move from Fit for you to CV in
   writeFileSync(path.join(root, 'data', 'applications.md'), TRACKER);
   writeFileSync(path.join(root, 'data', 'writer-in-progress.txt'), '2\n');
   const html = render(collect(root));
-  assert.match(html, /<b>0<\/b><span class="flabel"><span>Fit for you/);
+  assert.match(html, /<b>0<small>\/50<\/small><\/b><span class="flabel"><span>Fit for you/);
   assert.match(html, /<b>1<\/b><span class="flabel"><span>CV in progress/);
 });
