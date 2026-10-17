@@ -23,7 +23,7 @@ take=$(( room < PER_RUN ? room : PER_RUN ))
 
 # Oldest Pending first. Skip URLs already in the tracker or in batch state (defensive dedup).
 mapfile -t urls < <(awk '/^## Pending/{p=1;next} /^## /{p=0} p && /^- \[ \] /{print $4}' "$PIPELINE" \
-  | grep -vxF -f <(grep -oE 'https?://[^ |)]+' "$DATA/data/applications.md" "$BATCH/batch-state.tsv" 2>/dev/null | sed 's/^[^:]*://' | sort -u) \
+  | grep -vxF -f <(grep -oE 'https?://[^[:space:]|)]+' "$DATA/data/applications.md" "$BATCH/batch-state.tsv" 2>/dev/null | sed 's/^[^:]*://' | sort -u) \
   | head -n "$take")
 if (( ${#urls[@]} == 0 )); then
   heartbeat skip "no pending leads (evaluated $evaluated/$CAP)"
