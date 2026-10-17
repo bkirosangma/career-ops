@@ -23,6 +23,11 @@ mapfile -t rows < <(awk -F'|' -v min="$APPLY_MIN" '
 
 if (( ${#rows[@]} == 0 )); then heartbeat skip "no Evaluated rows ≥$APPLY_MIN without PDF"; log "nothing to write"; exit 0; fi
 
+# The rows this run is writing, for the board's "CV in progress" stage; removed when the run ends.
+INPROG="$DATA/data/writer-in-progress.txt"
+printf '%s\n' "${rows[@]}" | cut -f1 > "$INPROG"
+trap 'rm -f "$INPROG"' EXIT
+
 done_n=0; fail_n=0
 for row in "${rows[@]}"; do
   IFS=$'\t' read -r num score repfile <<<"$row"

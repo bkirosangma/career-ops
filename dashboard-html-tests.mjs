@@ -43,7 +43,9 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
   const html = render(collect(root), { now: Date.parse('2026-10-17T05:00:00Z') });
   assert.doesNotMatch(html, /<script>x<\/script>/);
   assert.match(html, /&lt;script&gt;x/);
-  assert.match(html, new RegExp(`<b>2<small>/${CAPS.evaluated}</small></b><span class="flabel"><span>Fit for you`));
+  assert.match(html, /<b>1<\/b><span class="flabel"><span>Fit for you/);
+  assert.match(html, /<b>1<\/b><span class="flabel"><span>Ready to apply/);
+  assert.match(html, new RegExp(`2/${CAPS.evaluated}</b> fit slots used`));
   assert.ok(html.indexOf('<h2>Learn') < html.indexOf('id="applications"'), 'Learn sits above Applications');
   for (const h of ['Flow', 'Needs you', 'Learn', 'Applications']) assert.match(html, new RegExp(`<h2>${h}`));
   for (const t of ['agents', 'history', 'pending', 'freelance']) assert.match(html, new RegExp(`data-tab="${t}"`));
@@ -58,4 +60,14 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
 test('mdLite: numbered and bullet lists, line breaks, links, escaping', () => {
   const html = mdLite('## Top 2 this week\n\n1. **[Kafka](kafka.md)** (P5): one\n2. Go ramp: two\n\nNext in line: a\nsecond line\n\n- x <b>\n- y');
   assert.equal(html, '<h3>Top 2 this week</h3>\n<ol><li><strong><a href="/interview-prep/coach/kafka.md" target="_blank">Kafka</a></strong> (P5): one</li><li>Go ramp: two</li></ol>\n<p>Next in line: a<br>second line</p>\n<ul><li>x &lt;b&gt;</li><li>y</li></ul>');
+});
+
+test('flow: rows listed in writer-in-progress.txt move from Fit for you to CV in progress', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'dash-w-'));
+  mkdirSync(path.join(root, 'data'), { recursive: true });
+  writeFileSync(path.join(root, 'data', 'applications.md'), TRACKER);
+  writeFileSync(path.join(root, 'data', 'writer-in-progress.txt'), '2\n');
+  const html = render(collect(root));
+  assert.match(html, /<b>0<\/b><span class="flabel"><span>Fit for you/);
+  assert.match(html, /<b>1<\/b><span class="flabel"><span>CV in progress/);
 });

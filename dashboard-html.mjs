@@ -13,7 +13,7 @@
 //   data/freelance/*              leads, drafts awaiting approval, sent log
 //   interview-prep/coach/*        Learn section (index.json + summary.md)
 // Sections and caps follow docs/plans/2026-10-16-agent-system.md.
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCareerOpsRoot } from './path-resolver.mjs';
@@ -55,6 +55,14 @@ export function collectPipeline(text) {
     }
   }
   return { pending };
+}
+
+// Rows the Writer is working on in its current run (data/writer-in-progress.txt). A file older than
+// the longest possible run (4 CVs x 25 min) is a crashed run's leftover and is ignored.
+export function collectWriterInProgress(root, now = Date.now()) {
+  const f = path.join(root, 'data', 'writer-in-progress.txt');
+  try { if (now - statSync(f).mtimeMs > 2 * 3600e3) return new Set(); } catch { return new Set(); }
+  return new Set(read(f).split(/\s+/).filter((x) => /^\d+$/.test(x)));
 }
 
 // Scout reserve (data/scout/backlog.md) and what the gate/triage dropped (data/scout/dropped.tsv).
@@ -111,8 +119,10 @@ export function collectCoach(root) {
 
 
 // Pipeline flow: main stages top to bottom, drop-offs to the side. Queue stages carry their cap as a fill bar.
-export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, triaged: 0 } }) {
+export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, triaged: 0 }, writing = new Set() }) {
   const b = tracker.byState;
+  const inProgress = tracker.awaitingCv.filter((r) => writing.has(String(r.num))).length;
+  const waitingCv = tracker.awaitingCv.length - inProgress;
   const fit = tracker.awaitingCv.length + tracker.readyToApply.length;
   const box = (n, label, { cap, note, tone = '' } = {}) => {
     const pct = cap ? Math.min(100, Math.round((n / cap) * 100)) : 0;
@@ -124,7 +134,9 @@ export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, 
 ${row(box(scout.reserve, 'Reserve', { note: 'Scouted, waiting for a slot in the queue', tone: 'mut' }), [[scout.gated, 'locked to another region or office abroad'], [scout.triaged, 'not a technical role']])}
 ${row(box(pipeline.pending.length, 'Scouted', { cap: CAPS.pending, note: 'Waiting for the Researcher' }))}
 ${row(box(tracker.rows.length, 'Researched', { note: 'All time' }), [[(b.SKIP || 0) + tracker.belowBar.length, `scored below ${APPLY_MIN} or failed a gate`]])}
-${row(box(fit, 'Fit for you', { cap: CAPS.evaluated, note: `${tracker.readyToApply.length} ready to apply, ${tracker.awaitingCv.length} getting a CV`, tone: 'you' }))}
+${row(box(waitingCv, 'Fit for you', { note: 'Scored 2.5 or higher, waiting for the Writer' }), [[`${fit}/${CAPS.evaluated}`, 'fit slots used; the Researcher pauses at 50']])}
+${row(box(inProgress, 'CV in progress', { note: inProgress ? 'The Writer is making these now' : 'The Writer runs every hour' }))}
+${row(box(tracker.readyToApply.length, 'Ready to apply', { note: 'CV made, waiting on you', tone: 'you' }))}
 ${row(box(b.Applied || 0, 'Applied', { note: 'Waiting for a reply', tone: 'go' }), [[b.Rejected || 0, 'rejected'], [b.Discarded || 0, 'closed or discarded']])}
 ${row(box((b.Responded || 0) + (b.Interview || 0), 'Talking', { note: 'Replied or interviewing', tone: 'go' }))}
 ${row(box((b.Offer || 0) + (b.Hired || 0), 'Offer', { tone: 'go' }))}
@@ -379,6 +391,7 @@ function collectBase(root) {
     inbox: collectInbox(read(path.join(root, 'data', 'agent-inbox.md'))),
     freelance: collectFreelance(root),
     coach: collectCoach(root),
+    writing: collectWriterInProgress(root),
     scout: collectScout(read(path.join(root, 'data', 'scout', 'backlog.md')), read(path.join(root, 'data', 'scout', 'dropped.tsv'))),
   };
 }
