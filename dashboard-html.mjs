@@ -58,10 +58,10 @@ export function collectPipeline(text) {
 }
 
 // Rows the Writer is working on in its current run (data/writer-in-progress.txt). A file older than
-// the longest possible run (4 CVs x 25 min) is a crashed run's leftover and is ignored.
+// the longest possible run (one CV, 25 min max) is a crashed run's leftover and is ignored.
 export function collectWriterInProgress(root, now = Date.now()) {
   const f = path.join(root, 'data', 'writer-in-progress.txt');
-  try { if (now - statSync(f).mtimeMs > 2 * 3600e3) return new Set(); } catch { return new Set(); }
+  try { if (now - statSync(f).mtimeMs > 3600e3) return new Set(); } catch { return new Set(); }
   return new Set(read(f).split(/\s+/).filter((x) => /^\d+$/.test(x)));
 }
 
@@ -135,7 +135,7 @@ ${row(box(scout.reserve, 'Reserve', { note: 'Scouted, waiting for a slot in the 
 ${row(box(pipeline.pending.length, 'Scouted', { cap: CAPS.pending, note: 'Waiting for the Researcher' }))}
 ${row(box(tracker.rows.length, 'Researched', { note: 'All time' }), [[(b.SKIP || 0) + tracker.belowBar.length, `scored below ${APPLY_MIN} or failed a gate`]])}
 ${row(box(waitingCv, 'Fit for you', { note: 'Scored 2.5 or higher, waiting for the Writer' }), [[`${fit}/${CAPS.evaluated}`, 'fit slots used; the Researcher pauses at 50']])}
-${row(box(inProgress, 'CV in progress', { note: inProgress ? 'The Writer is making these now' : 'The Writer runs every hour' }))}
+${row(box(inProgress, 'CV in progress', { note: inProgress ? 'The Writer is making these now' : 'The Writer checks every 30 minutes and drains the queue' }))}
 ${row(box(tracker.readyToApply.length, 'Ready to apply', { note: 'CV made, waiting on you', tone: 'you' }))}
 ${row(box(b.Applied || 0, 'Applied', { note: 'Waiting for a reply', tone: 'go' }), [[b.Rejected || 0, 'rejected'], [b.Discarded || 0, 'closed or discarded']])}
 ${row(box((b.Responded || 0) + (b.Interview || 0), 'Talking', { note: 'Replied or interviewing', tone: 'go' }))}
