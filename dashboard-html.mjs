@@ -178,7 +178,7 @@ const ago = (ts, now) => {
 // newlines kept as line breaks), bold, code and links. Input is escaped first.
 const mdInline = (t) => t
   .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, x, h) => (/^https?:/.test(h) ? `<a href="${h}" target="_blank" rel="noopener">${x}</a>` : /^[\w./-]+\.md$/.test(h) ? `<a href="/interview-prep/coach/${h}" target="_blank">${x}</a>` : x))
-  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?![*\w])/g, '$1<em>$2</em>').replace(/`([^`]+)`/g, '<code>$1</code>');
 export function mdLite(md) {
   const out = []; let list = null; let para = []; let table = null;
   const cells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
@@ -256,7 +256,7 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   const { tracker, pipeline, heartbeat, inbox, freelance, coach, apps = [] } = data;
   const running = data.running || {};
   const agentState = (a) => { const h = heartbeat.latest[a]; return running[a] ? 'run' : !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'skip' ? 'skip' : 'ok'; };
-  const STATE_WORD = { run: 'working now', ok: 'last run fine', skip: 'nothing to do', error: 'last run failed', never: 'never ran' };
+  const STATE_WORD = { run: 'Working now', ok: 'Last run fine', skip: 'Nothing to do', error: 'Last run failed', never: 'Never ran' };
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
     const r = running[a];
@@ -286,7 +286,7 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
     return `<details class="draft" id="draft-${esc(d.file)}"><summary>${esc(d.title)} <span class="tag draft">${esc(d.channel || 'draft')}</span> <em>${esc(d.to)}</em></summary><div class="actions">${action} <span class="result"></span></div><pre data-body>${esc(d.body)}</pre></details>`;
   }).join('');
   const sentRows = freelance.sent.slice(-50).reverse().map((c) => `<tr>${c.slice(0, 5).map((x) => `<td>${esc(x)}</td>`).join('')}</tr>`).join('');
-  const leadRows = freelance.leads.slice(-100).reverse().map((c) => `<tr>${c.slice(0, 6).map((x, i) => `<td>${i === 2 && /^https?:/.test(x) ? `<a href="${esc(x)}" rel="noopener">link</a>` : esc(x)}</td>`).join('')}</tr>`).join('');
+  const leadRows = freelance.leads.slice(-100).reverse().map((c) => `<tr>${c.slice(0, 6).map((x, i) => `<td>${i === 3 && /^https?:/.test(x) ? `<a href="${esc(x)}" target="_blank" rel="noopener noreferrer">link</a>` : esc(x)}</td>`).join('')}</tr>`).join('');
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -307,6 +307,12 @@ header{margin:4px 0 18px}h1{font:700 30px/1 var(--num);letter-spacing:.01em;marg
 h2{font-size:18px;font-weight:700;margin:0 0 12px;display:flex;align-items:baseline;gap:8px}h3{font-size:15px;font-weight:700;margin:16px 0 6px;color:var(--slate)}h4{font-size:15px;margin:12px 0 4px}
 .count{font:700 22px/1 var(--num);color:var(--wait)}
 section{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+section{min-width:0;max-width:100%}  /* flex/grid children: let inner .wrap tables scroll instead of widening the page */
+.app,.qs li,.md p,.md li,.apps li,details summary,pre,.notes,.next{overflow-wrap:anywhere}td{overflow-wrap:break-word}th{white-space:nowrap}.wrap>table td{min-width:9ch}
+/* Phones: data tables become stacked rows — first cell bold, the short middle cells inline, the last (note/title) underneath */
+@media(max-width:600px){table.rows,table.rows tbody,table.rows tr,table.rows td{display:block}table.rows thead{display:none}
+table.rows tr{padding:9px 0;border-bottom:1px solid var(--rule)}table.rows td{border:0;padding:1px 0;min-width:0}
+table.rows td:first-child{font-weight:700}table.rows td:not(:first-child):not(:last-child){display:inline-block;margin-right:12px;color:var(--slate);font-size:13px}table.rows td:empty{display:none}}.md-table td,.md-table th{overflow-wrap:normal;min-width:7ch}
 .hint{font-size:14px;color:var(--slate);margin:-4px 0 10px}.empty{color:var(--slate)}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--rule);vertical-align:top}th{color:var(--slate);font-weight:600}
 .wrap{overflow-x:auto}
@@ -357,8 +363,8 @@ tr.run td:first-child{color:var(--link);font-weight:700}.spin{display:inline-blo
 <header><h1>Career Ops</h1><p class="lede">${ready.length ? `${ready.length} role${ready.length > 1 ? 's are' : ' is'} ready for you to apply to` : 'No roles are waiting on you'}${questions.length ? `, and ${questions.length} question${questions.length > 1 ? 's need' : ' needs'} an answer` : ''}.${live && Object.keys(running).length ? ` ${Object.keys(running).length} agent${Object.keys(running).length > 1 ? 's are' : ' is'} working.` : ''}${live ? '' : ` <span class="stamp">Snapshot from ${esc(generatedAt.slice(0, 16).replace('T', ' '))}</span>`}</p></header>
 
 ${tabbed('ops', [
-  ['agents', 'Agents', `<div class="wrap"><table><thead><tr><th>Agent</th><th>State</th><th>When</th><th>Took</th><th>Note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
-  ['history', 'History', `<div class="wrap"><table><thead><tr><th>When</th><th>Agent</th><th>State</th><th>Took</th><th>Note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${dur(Number(h.seconds) || 0)}</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
+  ['agents', 'Agents', `<div class="wrap"><table class="rows"><thead><tr><th>Agent</th><th>State</th><th>When</th><th>Took</th><th>Note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
+  ['history', 'History', `<div class="wrap"><table class="rows"><thead><tr><th>When</th><th>Agent</th><th>State</th><th>Took</th><th>Note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${dur(Number(h.seconds) || 0)}</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
 ], { open: false, strip })}
 
 <div class="cols">
@@ -377,11 +383,11 @@ ${renderApplications(apps)}
 </div>
 
 ${tabbed('leads', [
-  ['pending', `Pending leads (${pipeline.pending.length})`, `<div class="wrap">${pendingRows ? `<table><thead><tr><th>Company</th><th>Role</th><th>Location</th><th>Posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">The queue is empty. Scout refills it from the reserve every 5 minutes.</p>'}</div>`],
+  ['pending', `Pending leads (${pipeline.pending.length})`, `<div class="wrap">${pendingRows ? `<table class="rows"><thead><tr><th>Company</th><th>Role</th><th>Location</th><th>Posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">The queue is empty. Scout refills it from the reserve every 5 minutes.</p>'}</div>`],
   ['freelance', `Freelance${freelance.paused ? ' (paused)' : ''}`, `${freelance.paused ? '<p class="empty">Freelance outreach is paused. Delete data/freelance/PAUSE to resume it.</p>' : ''}
 <h3>Drafts awaiting you (${freelance.drafts.length})</h3>${draftCards || '<p class="empty">No drafts.</p>'}
-<h3>Sent (${freelance.sent.length})</h3><div class="wrap">${sentRows ? `<table><thead><tr><th>when</th><th>channel</th><th>to</th><th>lead</th><th>result</th></tr></thead><tbody>${sentRows}</tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}</div>
-<h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>link</th><th>title</th><th>budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>`],
+<h3>Sent (${freelance.sent.length})</h3><div class="wrap">${sentRows ? `<table class="rows"><thead><tr><th>When</th><th>Channel</th><th>To</th><th>Lead</th><th>Result</th></tr></thead><tbody>${sentRows}</tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}</div>
+<h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table class="rows"><thead><tr><th>Lead</th><th>Found</th><th>Source</th><th>Link</th><th>Title</th><th>Budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>`],
 ])}
 </main>
 <script>

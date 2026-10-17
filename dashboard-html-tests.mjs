@@ -89,3 +89,7 @@ test('mdLite: pipe tables become real tables', () => {
   const html = mdLite('Applies to\n\n| Tracker | Company |\n|---|---|\n| #66 | Twilio |\n| #120 | **ElevenLabs** |\n\nAfter');
   assert.equal(html, '<p>Applies to</p>\n<div class="wrap"><table class="md-table"><thead><tr><th>Tracker</th><th>Company</th></tr></thead><tbody><tr><td>#66</td><td>Twilio</td></tr><tr><td>#120</td><td><strong>ElevenLabs</strong></td></tr></tbody></table></div>\n<p>After</p>');
 });
+
+test('mdLite: italics, without touching bold or a lone asterisk', () => {
+  assert.equal(mdLite('**Kafka** *Arctic Wolf #107; NVIDIA #78* and 5 * 3'), '<p><strong>Kafka</strong> <em>Arctic Wolf #107; NVIDIA #78</em> and 5 * 3</p>');
+});
