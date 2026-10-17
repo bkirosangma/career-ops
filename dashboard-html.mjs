@@ -180,11 +180,24 @@ const mdInline = (t) => t
   .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, x, h) => (/^https?:/.test(h) ? `<a href="${h}" target="_blank" rel="noopener">${x}</a>` : /^[\w./-]+\.md$/.test(h) ? `<a href="/interview-prep/coach/${h}" target="_blank">${x}</a>` : x))
   .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
 export function mdLite(md) {
-  const out = []; let list = null; let para = [];
+  const out = []; let list = null; let para = []; let table = null;
+  const cells = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
+  const flushTable = () => {
+    if (!table) return;
+    const [head, ...body] = table;
+    out.push(`<div class="wrap"><table class="md-table"><thead><tr>${head.map((c) => `<th>${mdInline(c)}</th>`).join('')}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${mdInline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+    table = null;
+  };
   const flushPara = () => { if (para.length) out.push(`<p>${para.map(mdInline).join('<br>')}</p>`); para = []; };
   const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map((i) => `<li>${mdInline(i)}</li>`).join('')}</${list.tag}>`); list = null; };
   for (const raw of esc(md).split('\n')) {
     const line = raw.replace(/\s+$/, '');
+    if (/^\s*\|.*\|\s*$/.test(line)) {                                   // table row
+      flushPara(); flushList();
+      if (/^\s*\|[\s:|-]+\|\s*$/.test(line)) continue;                       // |---|---| separator
+      (table ||= []).push(cells(line)); continue;
+    }
+    flushTable();
     const h = line.match(/^(#{1,4}) (.+)$/), ul = line.match(/^\s*[-*] (.+)$/), ol = line.match(/^\s*\d+[.)] (.+)$/);
     if (!line.trim()) { flushPara(); flushList(); continue; }
     if (h) { flushPara(); flushList(); out.push(`<${h[1].length <= 2 ? 'h3' : 'h4'}>${mdInline(h[2])}</${h[1].length <= 2 ? 'h3' : 'h4'}>`); continue; }
@@ -197,7 +210,7 @@ export function mdLite(md) {
     if (list && /^\s{2,}/.test(raw)) { list.items[list.items.length - 1] += ' ' + line.trim(); continue; }  // wrapped list item
     flushList(); para.push(line);
   }
-  flushPara(); flushList();
+  flushPara(); flushList(); flushTable();
   return out.join('\n');
 }
 
@@ -305,7 +318,7 @@ ul,ol{margin:6px 0;padding-left:20px}li{margin:4px 0}em{color:var(--slate);font-
 details{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}
 pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:var(--tint);padding:10px;border-radius:8px}
 .btn{font:inherit;font-size:14px;padding:6px 12px;border-radius:8px;border:1px solid var(--rule);background:var(--tint);color:var(--ink);cursor:pointer}.btn.send{background:var(--go);color:var(--on-go);border-color:transparent}.btn.mark{background:var(--wait);color:var(--on-wait);border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:13px;color:var(--slate)}
-.md{font-size:15px;max-width:72ch}.md p{margin:8px 0}.md ol,.md ul{padding-left:22px}.md li{margin:6px 0}.md h3{color:var(--ink);font-size:16px;margin:18px 0 6px}
+.md{font-size:15px;max-width:72ch}.md p{margin:8px 0}.md ol,.md ul{padding-left:22px}.md li{margin:6px 0}.md h3{color:var(--ink);font-size:16px;margin:18px 0 6px}.md-table{font-size:13px;margin:6px 0}.md-table th{white-space:nowrap}.md-table td:first-child{white-space:nowrap}
 /* Needs you */
 .qs{list-style:none;padding:0}.qs li{padding:10px 12px;border-left:3px solid var(--wait);background:var(--tint);border-radius:0 8px 8px 0;margin:6px 0;font-size:15px}
 .nxs{list-style:none;padding:0;margin:4px 0}.nx{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}.nx:last-child{border-bottom:0}

@@ -84,3 +84,8 @@ test('impactOf: live tracker state, stage and status weights; dead roles count z
   assert.deepEqual(impactOf({ status: 'gap', applications: apps }, rows), { impact: 15.5, live: 3 });
   assert.deepEqual(impactOf({ status: 'strong', applications: apps }, rows), { impact: 5.4, live: 3 });
 });
+
+test('mdLite: pipe tables become real tables', () => {
+  const html = mdLite('Applies to\n\n| Tracker | Company |\n|---|---|\n| #66 | Twilio |\n| #120 | **ElevenLabs** |\n\nAfter');
+  assert.equal(html, '<p>Applies to</p>\n<div class="wrap"><table class="md-table"><thead><tr><th>Tracker</th><th>Company</th></tr></thead><tbody><tr><td>#66</td><td>Twilio</td></tr><tr><td>#120</td><td><strong>ElevenLabs</strong></td></tr></tbody></table></div>\n<p>After</p>');
+});
