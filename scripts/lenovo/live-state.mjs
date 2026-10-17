@@ -32,7 +32,7 @@ export function progressFromLog(logText) {
   const ev = run.map((l) => l.match(/evaluating (\d+) leads/)).filter(Boolean).pop();
   const done = run.filter((l) => /✅ Completed|❌ Failed|Needs confirmation:/.test(l)).length;
   const last = run.filter((l) => l.trim() && !/JD prefetch|--skip-pdf/.test(l)).pop() || '';
-  return { total: ev ? Number(ev[1]) : null, done, last: last.replace(/^\[[^\]]+\]\s*/, '').replace(/^\s*[-=]+\s*/, '').slice(0, 160) };
+  return { total: ev ? Number(ev[1]) : null, done, last: last.trim().replace(/^\[[^\]]+\]\s*/, '').replace(/^\s*[-=]+\s*/, '').slice(0, 160) };
 }
 
 export function collectRunning(root, { ps = () => execFileSync('ps', ['-eo', 'pid,etimes,args'], { encoding: 'utf8' }), today = new Date().toISOString().slice(0, 10) } = {}) {
