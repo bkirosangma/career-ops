@@ -5,6 +5,7 @@
 //   node scripts/lenovo/scout-queue.mjs gate   <inbox.md> <out.txt>        # location gate (no model)
 //   node scripts/lenovo/scout-queue.mjs add    <entries.txt> [verdicts.tsv] # triage-filtered → backlog
 //   node scripts/lenovo/scout-queue.mjs refill [--cap 100]                 # backlog ⇄ Pending, to cap
+//   node scripts/lenovo/scout-queue.mjs prune  <url\treason.tsv>          # drop dead leads from Pending
 //   node scripts/lenovo/scout-queue.mjs status
 //
 // Entry lines are the scanners' own format: `- [ ] URL | Company | Title | Location | posted: …`.
@@ -140,6 +141,31 @@ async function cmdRefill(cap) {
   console.log(JSON.stringify({ cap, pending: pendingAfter, movedFromBacklog: moved, trimmedToBacklog: trimmed, backlog: backlogEntries().length }));
 }
 
+// Remove the given URLs from Pending (and the backlog), logging each with its reason.
+export function pruneLines(lines, dead) {
+  const kept = [], removed = [];
+  for (const l of lines) (dead.has(urlOf(l)) ? removed : kept).push(l);
+  return { kept, removed };
+}
+
+async function cmdPrune(file) {
+  const dead = new Map();
+  for (const l of read(file).split('\n')) { const [u, ...why] = l.split('\t'); if (/^https?:/.test(u || '')) dead.set(u.trim(), why.join(' ').trim()); }
+  let fromPending = 0, fromBacklog = 0;
+  await withPipelineLock(PIPELINE, async () => {
+    const parts = splitPending(read(PIPELINE));
+    if (!parts) return;
+    await withPipelineLock(BACKLOG, () => {
+      const p = pruneLines(parts.pending, dead), b = pruneLines(backlogEntries(), dead);
+      fromPending = p.removed.length; fromBacklog = b.removed.length;
+      if (fromPending) { parts.pending = p.kept; writeAtomic(PIPELINE, joinPending(parts)); }
+      if (fromBacklog) writeBacklog(b.kept);
+      logDropped([...p.removed, ...b.removed].map((l) => [`research: ${(dead.get(urlOf(l)) || '').slice(0, 160)}`, l]));
+    });
+  });
+  console.log(JSON.stringify({ prunedFromPending: fromPending, prunedFromBacklog: fromBacklog }));
+}
+
 function cmdStatus() {
   const parts = splitPending(read(PIPELINE));
   console.log(JSON.stringify({ pending: parts ? parts.pending.length : 0, backlog: backlogEntries().length }));
@@ -152,8 +178,9 @@ async function main() {
   if (cmd === 'gate' && a && b) return cmdGate(a, b);
   if (cmd === 'add' && a) return cmdAdd(a, b);
   if (cmd === 'refill') return cmdRefill(cap);
+  if (cmd === 'prune' && a) return cmdPrune(a);
   if (cmd === 'status') return cmdStatus();
-  console.error('usage: scout-queue.mjs gate <inbox> <out> | add <entries> [verdicts] | refill [--cap N] | status'); process.exit(2);
+  console.error('usage: scout-queue.mjs gate <inbox> <out> | add <entries> [verdicts] | refill [--cap N] | prune <dead.tsv> | status'); process.exit(2);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => { console.error(e.message); process.exit(1); });

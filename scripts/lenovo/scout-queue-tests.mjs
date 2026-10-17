@@ -32,3 +32,16 @@ test('refill tops Pending to the cap from the backlog and trims overflow back', 
   assert.match(after, /https:\/\/a\/4 [\s\S]*## Processed/);
   assert.deepEqual(run('refill', '--cap', '2'), { cap: 2, pending: 2, movedFromBacklog: 0, trimmedToBacklog: 2, backlog: 4 });
 });
+
+test('prune drops dead leads from Pending and the backlog and logs why', () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'sq-')); mkdirSync(path.join(root, 'data', 'scout'), { recursive: true });
+  const e = (n) => `- [ ] https://a/${n} | A | Dev ${n} | Remote | posted: 2026-10-16`;
+  writeFileSync(path.join(root, 'data', 'pipeline.md'), `# P\n\n## Pending\n\n${[1, 2, 3].map(e).join('\n')}\n\n## Processed\n`);
+  writeFileSync(path.join(root, 'data', 'scout', 'backlog.md'), `# b\n\n## Backlog\n${[4, 5].map(e).join('\n')}\n`);
+  const dead = path.join(root, 'dead.tsv');
+  writeFileSync(dead, 'https://a/2\tfailed: JD unavailable\nhttps://a/5\tneeds_confirmation: agency?\n');
+  const out = JSON.parse(execFileSync('node', [path.join(HERE, 'scout-queue.mjs'), 'prune', dead], { env: { ...process.env, CAREER_OPS_ROOT: root } }).toString());
+  assert.deepEqual(out, { prunedFromPending: 1, prunedFromBacklog: 1 });
+  assert.doesNotMatch(readFileSync(path.join(root, 'data', 'pipeline.md'), 'utf8'), /a\/2 /);
+  assert.match(readFileSync(path.join(root, 'data', 'scout', 'dropped.tsv'), 'utf8'), /research: failed: JD unavailable/);
+});

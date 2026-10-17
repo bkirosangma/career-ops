@@ -39,9 +39,22 @@ set +e
 timeout 110m "$BATCH/batch-runner.sh" --cli claude --model "$MODEL_SONNET" --parallel "$PARALLEL" --limit "${#urls[@]}" --skip-pdf >>"$LOG" 2>&1
 rc=$?
 set -e
+# Workers write their tracker TSV under the repo or the Data Root depending on how they resolve the
+# relative path, so merge both.
 node merge-tracker.mjs >>"$LOG" 2>&1 || log "WARN: merge-tracker"
+CAREER_OPS_ADDITIONS="$DATA/batch/tracker-additions" node merge-tracker.mjs >>"$LOG" 2>&1 || log "WARN: merge-tracker (data root)"
 mkdir -p "$DATA/batch" && cp -f "$BATCH/batch-state.tsv" "$DATA/batch/batch-state.tsv" 2>/dev/null  # reconcile resolves state inside the Data Root
 node reconcile-pipeline.mjs >>"$LOG" 2>&1 || log "WARN: reconcile-pipeline"
+# Failed / held leads are never re-picked (the URL filter above skips batch-state), so take them out of
+# Pending — logged in data/scout/dropped.tsv — and let the refill hand their slots to fresh leads.
+# Held ones (needs_confirmation) also go to the inbox: they need the user's answer.
+awk -F'\t' 'NR>1 && ($3=="failed" || $3=="needs_confirmation") {print $2 "\t" $3 ": " $8}' "$BATCH/batch-state.tsv" > "$BATCH/tmp-dead.tsv"
+node scripts/lenovo/scout-queue.mjs prune "$BATCH/tmp-dead.tsv" >>"$LOG" 2>&1 || log "WARN: prune"
+while IFS=$'\t' read -r u why; do
+  [[ "$why" == needs_confirmation* ]] || continue
+  grep -qF "$u" "$CAREER_OPS_INBOX" 2>/dev/null || node agent-inbox.mjs add "Researcher held $u — ${why#needs_confirmation: }" >>"$LOG" 2>&1 || true
+done < "$BATCH/tmp-dead.tsv"
+node scripts/lenovo/scout-queue.mjs refill --cap 100 >>"$LOG" 2>&1 || true
 # Seed follow-ups + status ledger are handled by set-status/outcome paths; nothing to do here.
 
 after=$(fit_count 2.5)

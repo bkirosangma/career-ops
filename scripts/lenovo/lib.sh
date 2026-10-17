@@ -24,6 +24,7 @@ export CAREER_OPS_ROOT="$DATA"
 # Scripts that are not Data-Root aware get pointed explicitly:
 export CAREER_OPS_INBOX="$DATA/data/agent-inbox.md"          # agent-inbox.mjs (cwd-relative by default)
 export CAREER_OPS_ADDITIONS="$REPO/batch/tracker-additions"   # merge-tracker.mjs: batch workers write here
+export CAREER_OPS_BATCH_STATE="$REPO/batch/batch-state.tsv"   # live state for reserve-report-num + merge-tracker (the Data Root copy lags a run)
 
 SECRETS="${CAREER_OPS_SECRETS:-$HOME/.config/career-ops/secrets.env}"
 if [[ -f "$SECRETS" ]]; then set -a; . "$SECRETS"; set +a; fi

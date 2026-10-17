@@ -1230,6 +1230,11 @@ process_offer() {
         shopt -s nullglob
         report_artifacts=("$REPORTS_DIR/$report_num-"*.md)
         shopt -u nullglob
+        # The reservation sentinel (NNN-RESERVED.md) is the runner's own file, not a worker artifact.
+        local -a real_artifacts=()
+        local a
+        for a in ${report_artifacts[@]+"${report_artifacts[@]}"}; do [[ "$a" == *-RESERVED.md ]] || real_artifacts+=("$a"); done
+        report_artifacts=(${real_artifacts[@]+"${real_artifacts[@]}"})
       fi
       if [[ -f "$tracker_artifact" || ${#report_artifacts[@]} -gt 0 ]]; then
         local quarantine_dir="$LOGS_DIR/quarantine"
