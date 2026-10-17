@@ -20,29 +20,40 @@ import { appendCandidate } from '../../paste-reply.mjs';
 
 const ATS_SENDERS = ['greenhouse.io', 'lever.co', 'ashbyhq.com', 'myworkday.com', 'myworkdayjobs.com', 'icims.com', 'smartrecruiters.com', 'workable.com', 'bamboohr.com', 'jobvite.com', 'successfactors.com', 'taleo.net', 'recruitee.com', 'teamtailor.com', 'personio.de', 'hire.lever.co', 'us.greenhouse-mail.io', 'calendly.com', 'goodtime.io', 'hackerrank.com', 'codility.com', 'hirevue.com'];
 const EXCLUDE_SENDERS = ['github.com', 'gitlab.com', 'atlassian.net', 'slack.com', 'notion.so', 'linkedin.com', 'google.com', 'apple.com', 'amazon.in', 'amazon.com', 'medium.com', 'substack.com'];
-const SUBJECT_TERMS = ['application', 'interview', 'your application', 'position', 'role', 'opportunity', 'next steps', 'assessment', 'offer', 'thank you for applying', 'unfortunately', 'moving forward', 'schedule', 'availability', 'recruiter', 'hiring'];
+const SUBJECT_TERMS = ['application', 'interview', 'your application', 'position', 'role', 'opportunity', 'next steps', 'assessment', 'offer', 'thank you for applying', 'thank you for your interest', 'your interest in', 'candidacy', 'unfortunately', 'moving forward', 'schedule', 'availability', 'recruiter', 'hiring', 'update'];
+// Employer mail from a company's own domain (careers@twilio.com, "Thank you for your interest") matches
+// neither the ATS senders nor a telling subject, so also match the decision phrases in the body.
+const BODY_PHRASES = ['not to move forward', 'not be moving forward', 'not moving forward', 'unable to move forward', 'decided to move forward with other', 'your candidacy', 'received your application', 'schedule an interview', 'next stage', 'regret to inform'];
 
 export function buildQuery(days) {
   const from = ATS_SENDERS.map((d) => `from:${d}`).join(' OR ');
   const subj = SUBJECT_TERMS.map((t) => (t.includes(' ') ? `subject:"${t}"` : `subject:${t}`)).join(' OR ');
+  const body = BODY_PHRASES.map((t) => `"${t}"`).join(' OR ');
   const excl = EXCLUDE_SENDERS.map((d) => `-from:${d}`).join(' ');
-  return `newer_than:${days}d -from:me -category:promotions -category:social -category:forums ${excl} (${from} OR ${subj})`;
+  return `newer_than:${days}d -from:me -category:promotions -category:social -category:forums ${excl} (${from} OR ${subj} OR ${body})`;
 }
 
 export function headersToMap(headers = []) {
   return Object.fromEntries(headers.map((h) => [h.name.toLowerCase(), h.value]));
 }
 
+const decode = (data) => Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+const htmlToText = (h) => h.replace(/<(style|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<br\s*\/?>|<\/(p|div|tr|li|h\d)>/gi, '\n').replace(/<[^>]+>/g, ' ')
+  .replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/[ \t]+/g, ' ');
+
+// Prefers text/plain; HTML-only mail (Workday, many ATSes) is converted from its text/html part
+// rather than falling back to Gmail's ~200-character snippet.
 export function extractBody(payload, limit = 4000) {
-  const parts = [];
+  const plain = [], html = [];
   const walk = (p) => {
     if (!p) return;
-    if (p.mimeType === 'text/plain' && p.body?.data) parts.push(Buffer.from(p.body.data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    if (p.mimeType === 'text/plain' && p.body?.data) plain.push(decode(p.body.data));
+    else if (p.mimeType === 'text/html' && p.body?.data) html.push(decode(p.body.data));
     (p.parts || []).forEach(walk);
   };
   walk(payload);
-  if (!parts.length && payload?.body?.data) parts.push(Buffer.from(payload.body.data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8').replace(/<[^>]+>/g, ' '));
-  return parts.join('\n').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, limit);
+  const parts = plain.length ? plain : html.length ? html.map(htmlToText) : payload?.body?.data ? [htmlToText(decode(payload.body.data))] : [];
+  return parts.join('\n').replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, limit);
 }
 
 export function toCandidate(msg) {
