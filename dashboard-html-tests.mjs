@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { collect, collectPipeline, collectHeartbeat, collectTracker, render, CAPS, mdLite } from './dashboard-html.mjs';
+import { collect, collectPipeline, collectHeartbeat, collectTracker, render, CAPS, mdLite, impactOf } from './dashboard-html.mjs';
 
 const TRACKER = `# Applications Tracker
 
@@ -69,4 +69,18 @@ test('flow: rows listed in writer-in-progress.txt move from Fit for you to CV in
   const html = render(collect(root));
   assert.match(html, /<b>0<small>\/50<\/small><\/b><span class="flabel"><span>Fit for you/);
   assert.match(html, /<b>1<\/b><span class="flabel"><span>CV in progress/);
+});
+
+test('impactOf: live tracker state, stage and status weights; dead roles count zero', () => {
+  const rows = new Map([
+    ['1', { num: 1, score: '4.0/5', status: 'Applied', pdf: '✅' }],
+    ['2', { num: 2, score: '3.0/5', status: 'Evaluated', pdf: '✅' }],
+    ['3', { num: 3, score: '3.0/5', status: 'Evaluated', pdf: '❌' }],
+    ['4', { num: 4, score: '4.5/5', status: 'Rejected', pdf: '✅' }],
+    ['5', { num: 5, score: '2.0/5', status: 'Evaluated', pdf: '❌' }],
+  ]);
+  const apps = ['#1', '#2', '#3', '#4', '#5', '#99'].map((tracker) => ({ tracker }));
+  // 4×2 + 3×1.5 + 3×1 = 15.5; gap ×1, strong ×0.35
+  assert.deepEqual(impactOf({ status: 'gap', applications: apps }, rows), { impact: 15.5, live: 3 });
+  assert.deepEqual(impactOf({ status: 'strong', applications: apps }, rows), { impact: 5.4, live: 3 });
 });

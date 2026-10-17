@@ -115,6 +115,26 @@ export function collectCoach(root) {
   return { index: [...index].sort((a, b) => (b.priority || 0) - (a.priority || 0)), summary, files };
 }
 
+// ---------- Learn: impact ----------
+// Impact of studying a subject = Σ over the roles it helps (their CURRENT tracker state, not the Coach's
+// nightly snapshot) of score × how close the role is to an interview, × how much study changes the
+// outcome (a gap more than a refresh, a refresh more than a strength). Dead roles count zero.
+export const STAGE_WEIGHT = { Interview: 3, Responded: 3, Offer: 1, Applied: 2, ready: 1.5, fit: 1 };
+export const STATUS_WEIGHT = { gap: 1, refresh: 0.7, strong: 0.35 };
+export function impactOf(subject, rowsByNum) {
+  let total = 0, live = 0;
+  for (const a of subject.applications || []) {
+    const r = rowsByNum.get(String(a.tracker || '').replace(/\D/g, ''));
+    if (!r) continue;
+    const sc = parseFloat(String(r.score)) || 0;
+    const stage = r.status === 'Evaluated' ? (sc < APPLY_MIN ? null : /✅/.test(r.pdf) ? 'ready' : 'fit') : r.status;
+    const w = STAGE_WEIGHT[stage];
+    if (!w) continue;
+    total += sc * w; live++;
+  }
+  return { impact: Math.round(total * (STATUS_WEIGHT[subject.status] ?? 0.7) * 10) / 10, live };
+}
+
 // ---------- render ----------
 
 
@@ -241,7 +261,10 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   const applyNext = ready.slice(0, 5).map((c) => `<li class="nx"><span class="nx-score s-${c.score >= 4 ? 'hi' : c.score >= 3.5 ? 'good' : 'mid'}">${c.score != null ? c.score.toFixed(1) : '–'}</span><span class="nx-what"><a href="#app-${c.num}"><strong>${esc(c.company)}</strong></a><span>${esc(c.role)}</span></span><span class="nx-go">${c.postingHref ? `<a href="${esc(c.postingHref)}" target="_blank" rel="noopener noreferrer">Posting</a>` : ''}${c.pdfHref ? `<a href="${esc(c.pdfHref)}" target="_blank">CV</a>` : ''}</span></li>`).join('');
   const needsCount = questions.length + ready.length;
   const pendingRows = pipeline.pending.slice(0, 100).map((p) => `<tr><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" rel="noopener">${esc(p.title || p.url)}</a></td><td>${esc(p.location)}</td><td>${esc(p.posted)}</td></tr>`).join('');
-  const coachCards = coach.index.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="prio" title="priority ${esc(s.priority)} of 5">P${esc(s.priority)}</span><span class="subj">${esc(s.subject)}</span><span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span><em>${(s.applications || []).length} roles</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => `<li>${esc(a.tracker || '')} ${esc(a.company || '')} — ${esc(a.role || '')} <em>${esc(a.status || '')}</em></li>`).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
+  const rowsByNum = new Map(tracker.rows.map((r) => [String(r.num), r]));
+  const subjects = coach.index.map((x) => ({ ...x, ...impactOf(x, rowsByNum) })).sort((a, b) => b.impact - a.impact || b.live - a.live);
+  const topImpact = Math.max(1, ...subjects.map((x) => x.impact));
+  const coachCards = subjects.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="imp" title="impact ${s.impact}"><b>${Math.round((s.impact / topImpact) * 100)}</b><i style="width:${Math.round((s.impact / topImpact) * 100)}%"></i></span><span class="subj">${esc(s.subject)}</span><span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span><em>${s.live} live role${s.live === 1 ? '' : 's'}</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => { const r = rowsByNum.get(String(a.tracker || '').replace(/\D/g, '')); return `<li>${esc(a.tracker || '')} ${esc(a.company || '')}, ${esc(a.role || '')} <em>${esc(r ? r.status : a.status || '')}</em></li>`; }).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
   const draftCards = freelance.drafts.map((d) => {
     const isEmail = /^email$/i.test(d.channel) && /@/.test(d.to);
     const action = isEmail
@@ -291,7 +314,7 @@ pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:
 .more-link{margin:10px 0 0;font-size:15px}
 @media(max-width:520px){.nx{grid-template-columns:44px minmax(0,1fr)}.nx-go{grid-column:2}}
 /* Learn */
-details.subject{border:0;border-bottom:1px solid var(--rule);border-radius:0;padding:8px 0;margin:0}details.subject>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}.prio{font:700 18px/1 var(--num);color:var(--link);min-width:24px}.subj{font-weight:700;flex:1 1 200px}
+details.subject{border:0;border-bottom:1px solid var(--rule);border-radius:0;padding:8px 0;margin:0}details.subject>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}.imp{position:relative;flex:none;width:58px;align-self:center}.imp b{font:700 20px/1 var(--num);color:var(--ink)}.imp i{position:absolute;left:0;bottom:-4px;height:3px;background:var(--link);border-radius:2px}.subj{font-weight:700;flex:1 1 200px}
 details.notes-md{margin-top:14px}details.notes-md>summary{font-weight:700}
 /* Flow: the one loud element — big condensed numerals */
 .flow{display:flex;flex-direction:column;gap:20px}.frow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.75fr);gap:8px 16px;align-items:center;position:relative}
@@ -332,7 +355,7 @@ ${questions.length ? `<h3>Questions</h3><ul class="qs">${questions.join('')}</ul
 ${ready.length ? `<h3>Apply next</h3><ol class="nxs">${applyNext}</ol>${ready.length > 5 ? `<p class="more-link"><a href="#applications">All ${ready.length} ready roles</a></p>` : ''}` : ''}
 ${needsCount ? '' : '<p class="empty">Nothing is waiting on you. New fit roles show up here as soon as their CV is ready.</p>'}
 </section>
-<section id="learn"><h2>Learn</h2>${coach.index.length ? `<p class="hint">Interview subjects, most urgent first. Each one lists the roles it helps with.</p>${coachCards}` : '<p class="empty">The Coach builds this list every night from your active roles.</p>'}${coach.summary ? `<details class="notes-md"><summary>Coach’s notes for this week</summary><div class="md">${mdLite(coach.summary)}</div></details>` : ''}</section>
+<section id="learn"><h2>Learn</h2>${coach.index.length ? `<p class="hint">Subjects ranked by impact, out of 100 for the top one. Impact grows with how many live roles need the subject, how well those roles fit, and how close they are to an interview. Gaps count more than refreshers, and strengths least.</p>${coachCards}` : '<p class="empty">The Coach builds this list every night from your active roles.</p>'}${coach.summary ? `<details class="notes-md"><summary>Coach’s notes for this week</summary><div class="md">${mdLite(coach.summary)}</div></details>` : ''}</section>
 </div>
 <div class="col">
 ${renderFlow(data)}
