@@ -57,5 +57,5 @@ test('collect + render: root-absolute links, PDF from index, bad report degrades
   const html = renderApplications(cards);
   assert.doesNotMatch(html, /javascript:/);
   assert.match(html, /href="\/reports\/001-acme-2026-10-01\.md"/);
-  assert.match(html, /<b>Next:<\/b> Apply via Greenhouse/);
+  assert.match(html, /<b>Next<\/b> Apply via Greenhouse/);
 });

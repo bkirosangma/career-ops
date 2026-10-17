@@ -43,14 +43,14 @@ test('render: escapes HTML, shows caps and all sections, works on an empty data 
   const html = render(collect(root), { now: Date.parse('2026-10-17T05:00:00Z') });
   assert.doesNotMatch(html, /<script>x<\/script>/);
   assert.match(html, /&lt;script&gt;x/);
-  assert.match(html, new RegExp(`<b>2<small> / ${CAPS.evaluated}</small></b><span>Fit`));
+  assert.match(html, new RegExp(`<b>2<small>/${CAPS.evaluated}</small></b><span class="flabel"><span>Fit for you`));
   assert.ok(html.indexOf('<h2>Learn') < html.indexOf('id="applications"'), 'Learn sits above Applications');
   for (const h of ['Flow', 'Needs you', 'Learn', 'Applications']) assert.match(html, new RegExp(`<h2>${h}`));
   for (const t of ['agents', 'history', 'pending', 'freelance']) assert.match(html, new RegExp(`data-tab="${t}"`));
   
-  assert.match(html, /1 application\(s\) ready to apply/);
+  assert.match(html, /1 role is ready for you to apply to/);
   assert.match(html, /data-stage="ready"[^>]*open[\s\S]*?<strong>Acme<\/strong>/);
   const empty = render(collect(mkdtempSync(path.join(tmpdir(), 'dash-empty-'))));
-  assert.match(empty, /Nothing waiting on you/);
+  assert.match(empty, /Nothing is waiting on you/);
   assert.match(empty, /prefers-color-scheme:dark/);
 });

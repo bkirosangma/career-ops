@@ -11,11 +11,11 @@ import path from 'node:path';
 import { load as yamlLoad } from 'js-yaml';
 
 export const STAGES = [
-  { key: 'ready', title: 'Ready to apply', hint: 'CV generated, score ≥ 2.5 — you apply and press Submit', open: true },
-  { key: 'cv', title: 'Waiting for CV', hint: 'Writer picks these up hourly', open: true },
-  { key: 'active', title: 'In progress', hint: 'Applied, responded, interviewing, offer', open: true },
-  { key: 'below', title: 'Evaluated below 2.5', hint: 'Not applied — under the threshold', open: false },
-  { key: 'closed', title: 'Closed', hint: 'Rejected, discarded, skipped, hired', open: false },
+  { key: 'ready', title: 'Ready to apply', hint: 'The CV is made. Open the posting, apply, and press Submit yourself.', open: true },
+  { key: 'cv', title: 'Getting a CV', hint: 'The Writer makes these every hour.', open: true },
+  { key: 'active', title: 'Applied', hint: 'Waiting for a reply, or already talking.', open: true },
+  { key: 'below', title: 'Below 2.5', hint: 'Researched but scored under your bar, so not applied.', open: false },
+  { key: 'closed', title: 'Closed', hint: 'Rejected, discarded, skipped or hired.', open: false },
 ];
 const ACTIVE = new Set(['Applied', 'Responded', 'Interview', 'Offer']);
 
@@ -154,7 +154,8 @@ export function collectApplications(root, rows, { today = new Date().toISOString
 // ---------- render ----------
 
 const scoreClass = (s) => (s == null ? 'na' : s >= 4 ? 'hi' : s >= 3.5 ? 'good' : s >= 2.5 ? 'mid' : 'low');
-const REMOTE_LABEL = { yes: 'Remote ✓', unconfirmed: 'Remote unconfirmed', no: 'Not remote', unknown: 'Remote ?' };
+const REMOTE_LABEL = { yes: 'Remote, India OK', unconfirmed: 'Remote not confirmed', no: 'Not remote', unknown: 'Remote unclear' };
+const fmtDate = (d) => { const t = Date.parse(d); return isNaN(t) ? d : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }); };
 
 function card(c) {
   const links = [
@@ -162,21 +163,23 @@ function card(c) {
     c.reportHref && `<a href="${esc(c.reportHref)}" target="_blank">Report</a>`,
     c.pdfHref && `<a href="${esc(c.pdfHref)}" target="_blank">CV PDF</a>`,
   ].filter(Boolean).join('');
+  const showState = c.stage === 'active' || c.stage === 'closed';
   const meta = [
     `<span class="pill r-${c.remote}">${REMOTE_LABEL[c.remote]}</span>`,
-    c.legitimacy && `<span class="pill">${esc(c.legitimacy)}</span>`,
-    c.comp && `<span class="pill">${esc(c.comp)}</span>`,
-    c.daysInStage != null && `<span class="pill muted">${c.daysInStage}d in ${esc(c.status)}</span>`,
-    c.followUp && `<span class="pill ${c.followUp.overdue ? 'warn' : 'muted'}">follow-up ${c.followUp.overdue ? 'due' : ''} ${esc(c.followUp.date)}</span>`,
+    c.legitimacy && !/^high confidence$/i.test(c.legitimacy) && `<span class="pill">${esc(c.legitimacy)}</span>`,
+    c.followUp && `<span class="pill ${c.followUp.overdue ? 'warn' : 'muted'}">${c.followUp.overdue ? 'Follow up now' : `Follow up ${esc(fmtDate(c.followUp.date))}`}</span>`,
+    c.daysInStage >= 7 && c.stage !== 'closed' && !c.followUp && `<span class="pill muted">${c.daysInStage} days here</span>`,
   ].filter(Boolean).join('');
   const detail = (c.strengths.length || c.gaps.length || c.notes)
-    ? `<details class="more"><summary>Details</summary>${c.strengths.length ? `<p class="lbl">Strengths</p><ul>${c.strengths.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}${c.gaps.length ? `<p class="lbl">Gaps</p><ul>${c.gaps.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}${c.notes ? `<p class="lbl">Notes</p><p class="notes">${esc(c.notes)}</p>` : ''}</details>`
+    ? `<details class="more"><summary>Why it fits, and the gaps</summary>${c.strengths.length ? `<p class="lbl">Strengths</p><ul>${c.strengths.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}${c.gaps.length ? `<p class="lbl">Gaps</p><ul>${c.gaps.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}${c.notes ? `<p class="lbl">Notes</p><p class="notes">${esc(c.notes)}</p>` : ''}</details>`
     : '';
   const search = `${c.company} ${c.role} ${c.status} ${c.notes}`.toLowerCase();
   return `<article class="app" id="app-${c.num}" data-search="${esc(search)}" data-score="${c.score ?? -1}" data-date="${esc(c.date)}" data-num="${c.num}">
 <div class="app-top"><div class="app-title"><strong>${esc(c.company)}</strong><span>${esc(c.role)}</span></div><div class="score s-${scoreClass(c.score)}">${c.score != null ? c.score.toFixed(1) : '—'}</div></div>
-<div class="app-meta"><span class="muted">#${c.num} · ${esc(c.date)} · <span class="state s-${esc(c.status)}">${esc(c.status)}</span></span>${meta}</div>
-${c.nextAction ? `<p class="next"><b>Next:</b> ${esc(c.nextAction)}</p>` : ''}
+<p class="app-id">#${c.num}, found ${esc(fmtDate(c.date))}${showState ? ` <span class="state s-${esc(c.status)}">${esc(c.status)}</span>` : ''}</p>
+<div class="app-meta">${meta}</div>
+${c.comp ? `<p class="pay">Pay: ${esc(c.comp)}</p>` : ''}
+${c.nextAction ? `<p class="next"><b>Next</b> ${esc(c.nextAction)}</p>` : ''}
 ${c.parseWarning ? `<p class="warnline">${esc(c.parseWarning)}</p>` : ''}
 ${links ? `<div class="links">${links}</div>` : ''}${detail}</article>`;
 }
@@ -187,28 +190,30 @@ export function renderApplications(cards) {
   for (const k of Object.keys(byStage)) byStage[k].sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || b.num - a.num);
   const counts = STAGES.map((s) => `<span class="cnt"><b>${byStage[s.key].length}</b> ${esc(s.title)}</span>`).join('');
   const groups = STAGES.map((s) => `<details class="stage" data-stage="${s.key}"${s.open && byStage[s.key].length ? ' open' : ''}><summary><span>${esc(s.title)}</span> <span class="badge">${byStage[s.key].length}</span> <em>${esc(s.hint)}</em></summary><div class="cards">${byStage[s.key].map(card).join('') || '<p class="empty">None.</p>'}</div></details>`).join('');
-  return `<section id="applications"><h2>Applications (${cards.length})</h2>
+  return `<section id="applications"><h2>Applications <span class="count">${cards.length}</span></h2>
 <div class="counts">${counts}</div>
-<div class="tools"><input id="app-q" type="search" placeholder="Search company, role, notes…" aria-label="Search applications"><select id="app-sort" aria-label="Sort"><option value="score">Sort: score</option><option value="date">Sort: newest</option></select></div>
+<div class="tools"><input id="app-q" type="search" placeholder="Find a company or role" aria-label="Find a company or role"><select id="app-sort" aria-label="Sort applications"><option value="score">Best score first</option><option value="date">Newest first</option></select></div>
 ${groups}</section>`;
 }
 
 export const APPLICATIONS_CSS = `
-.counts{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 10px;font-size:13px;color:var(--mut)}.counts b{color:var(--ink);font-size:15px}
-.tools{display:flex;gap:8px;margin-bottom:10px}.tools input{flex:1;min-width:0}.tools input,.tools select{font:inherit;font-size:14px;padding:7px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
-details.stage{border:none;padding:0;margin:10px 0}details.stage>summary{font-weight:600;padding:8px 2px;border-bottom:1px solid var(--line);list-style-position:inside}details.stage>summary em{font-weight:400;margin-left:6px}
-.badge{display:inline-block;min-width:22px;text-align:center;font-size:12px;padding:1px 7px;border-radius:999px;background:var(--chip)}
-.cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));margin-top:10px}
-.app{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg)}
-.app-top{display:flex;justify-content:space-between;gap:10px}.app-title{display:flex;flex-direction:column;min-width:0}.app-title strong{font-size:15px}.app-title span{font-size:13px;color:var(--mut)}
-.score{flex:none;font-weight:700;font-size:16px;border-radius:8px;padding:4px 9px;height:fit-content;background:var(--chip)}
-.s-hi{background:var(--ok);color:#fff}.s-good{background:#2f9e8f;color:#fff}.s-mid{background:var(--warm);color:#000}.s-low,.s-na{background:var(--chip);color:var(--mut)}
-.app-meta{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:8px 0;font-size:12px}
-.pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--ink)}.pill.muted{color:var(--mut)}.pill.warn{background:var(--warm);color:#000}
-.r-yes{background:var(--ok);color:#fff}.r-unconfirmed{background:var(--warm);color:#000}.r-no{background:var(--bad);color:#fff}.r-unknown{color:var(--mut)}
-.next{font-size:13px;margin:6px 0}.warnline{font-size:12px;color:var(--bad);margin:4px 0}
-.links{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.links a{font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);text-decoration:none;color:var(--acc)}
-details.more{border:none;padding:0;margin:8px 0 0}details.more summary{font-size:12px;color:var(--mut)}.lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:8px 0 2px}.notes{font-size:12px;color:var(--mut);margin:0;word-break:break-word}
+.counts{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 12px;font-size:14px;color:var(--slate)}.counts b{font:700 20px/1 var(--num);color:var(--ink);margin-right:3px}
+.tools{display:flex;gap:8px;margin-bottom:8px}.tools input{flex:1;min-width:0}.tools input,.tools select{font:inherit;font-size:15px;padding:8px 11px;border-radius:8px;border:1px solid var(--rule);background:var(--paper);color:var(--ink)}
+details.stage{border:none;padding:0;margin:14px 0 0}details.stage>summary{font-weight:700;font-size:16px;padding:8px 0;border-bottom:1.5px solid var(--ink);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}details.stage>summary em{font-weight:400;font-size:14px}
+.badge{font:700 18px/1 var(--num);color:var(--slate)}
+.cards{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));margin-top:12px}
+.app{border:1px solid var(--rule);border-radius:8px;padding:12px 14px;background:var(--paper);display:flex;flex-direction:column}
+.app-top{display:flex;justify-content:space-between;gap:10px}.app-title{display:flex;flex-direction:column;min-width:0}.app-title strong{font-size:17px}.app-title span{font-size:14px;color:var(--slate)}
+.score{flex:none;font:700 26px/1 var(--num);border-radius:8px;padding:5px 8px;height:fit-content;min-width:46px;text-align:center}
+.s-hi{background:var(--go);color:var(--on-go)}.s-good{background:var(--go-tint);color:var(--ink)}.s-mid{background:var(--tint);color:var(--ink)}.s-low,.s-na{background:transparent;color:var(--slate);border:1px solid var(--rule)}
+.app-id{margin:6px 0 0;font-size:13px;color:var(--slate)}
+.app-meta{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0 0}.app-meta:empty{display:none}
+.pill{font-size:12px;padding:2px 9px;border-radius:999px;background:var(--tint);color:var(--ink)}.pill.muted{color:var(--slate)}.pill.warn{background:var(--wait);color:var(--on-wait);font-weight:700}
+.r-yes{background:var(--go-tint);color:var(--ink)}.r-yes::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--go);margin-right:5px;vertical-align:1px}.r-unconfirmed{background:var(--wait);color:var(--on-wait)}.r-no{background:var(--stop);color:#fff}.r-unknown{background:transparent;border:1px dashed var(--rule);color:var(--slate)}
+.pay{font-size:13px;color:var(--slate);margin:8px 0 0}
+.next{font-size:14px;margin:10px 0 0;max-width:62ch}.next b{display:block;font-size:13px;color:var(--slate)}.warnline{font-size:13px;color:var(--stop);margin:6px 0 0}
+.links{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;padding-top:12px}
+details.more{border:none;padding:0;margin:8px 0 0}details.more summary{font-size:13px;color:var(--slate)}.lbl{font-size:13px;font-weight:700;color:var(--slate);margin:8px 0 2px}.notes{font-size:13px;color:var(--slate);margin:0;word-break:break-word}
 .app.hidden{display:none}`;
 
 export const APPLICATIONS_JS = `

@@ -116,24 +116,24 @@ export function renderFlow({ tracker, pipeline, scout = { reserve: 0, gated: 0, 
   const fit = tracker.awaitingCv.length + tracker.readyToApply.length;
   const box = (n, label, { cap, note, tone = '' } = {}) => {
     const pct = cap ? Math.min(100, Math.round((n / cap) * 100)) : 0;
-    return `<div class="fbox ${tone}${cap ? ' queue' : ''}">${cap ? `<i style="width:${pct}%"></i>` : ''}<b>${n}${cap ? `<small> / ${cap}</small>` : ''}</b><span>${esc(label)}</span>${note ? `<em>${esc(note)}</em>` : ''}</div>`;
+    return `<div class="fbox ${tone}${cap ? ' queue' : ''}">${cap ? `<i style="width:${pct}%" aria-hidden="true"></i>` : ''}<b>${n}${cap ? `<small>/${cap}</small>` : ''}</b><span class="flabel"><span>${esc(label)}</span>${note ? `<em>${esc(note)}</em>` : ''}</span></div>`;
   };
   const side = (items) => items.length ? `<div class="fside">${items.map(([n, label]) => `<div class="fdrop"><b>${n}</b> ${esc(label)}</div>`).join('')}</div>` : '<div class="fside"></div>';
   const row = (main, drops = []) => `<div class="frow">${main}${side(drops)}</div>`;
   return `<section id="flow"><h2>Flow</h2><div class="flow">
-${row(box(scout.reserve, 'Reserve — scouted, waiting for a slot', { note: 'tops up the queue every 5 min', tone: 'mut' }), [[scout.gated, 'dropped: region-locked / office abroad'], [scout.triaged, 'dropped: non-technical']])}
-${row(box(pipeline.pending.length, 'Scouted — waiting for the Researcher', { cap: CAPS.pending }))}
-${row(box(tracker.rows.length, 'Researched (all time)'), [[(b.SKIP || 0) + tracker.belowBar.length, `scored below ${APPLY_MIN} or failed a gate`]])}
-${row(box(fit, `Fit ≥ ${APPLY_MIN} — waiting on you`, { cap: CAPS.evaluated, note: `${tracker.awaitingCv.length} CV being written · ${tracker.readyToApply.length} ready to apply` }))}
-${row(box(b.Applied || 0, 'Applied — waiting for a reply', { tone: 'go' }), [[b.Rejected || 0, 'rejected'], [b.Discarded || 0, 'discarded / posting closed']])}
-${row(box((b.Responded || 0) + (b.Interview || 0), 'Responded / interviewing', { tone: 'go' }))}
+${row(box(scout.reserve, 'Reserve', { note: 'Scouted, waiting for a slot in the queue', tone: 'mut' }), [[scout.gated, 'locked to another region or office abroad'], [scout.triaged, 'not a technical role']])}
+${row(box(pipeline.pending.length, 'Scouted', { cap: CAPS.pending, note: 'Waiting for the Researcher' }))}
+${row(box(tracker.rows.length, 'Researched', { note: 'All time' }), [[(b.SKIP || 0) + tracker.belowBar.length, `scored below ${APPLY_MIN} or failed a gate`]])}
+${row(box(fit, 'Fit for you', { cap: CAPS.evaluated, note: `${tracker.readyToApply.length} ready to apply, ${tracker.awaitingCv.length} getting a CV`, tone: 'you' }))}
+${row(box(b.Applied || 0, 'Applied', { note: 'Waiting for a reply', tone: 'go' }), [[b.Rejected || 0, 'rejected'], [b.Discarded || 0, 'closed or discarded']])}
+${row(box((b.Responded || 0) + (b.Interview || 0), 'Talking', { note: 'Replied or interviewing', tone: 'go' }))}
 ${row(box((b.Offer || 0) + (b.Hired || 0), 'Offer', { tone: 'go' }))}
 </div></section>`;
 }
 
 // A full-width panel with switchable tabs; the whole panel collapses (<details>). Tab choice and
 // open/closed state are remembered per viewer in localStorage (see the script at the bottom).
-const tabbed = (id, tabs) => `<section class="tabbed" id="${id}"><details open><summary><span class="tabs">${tabs.map(([k, label], i) => `<button type="button" class="tab${i ? '' : ' on'}" data-tab="${k}">${label}</button>`).join('')}</span><span class="fold"></span></summary>${tabs.map(([k, , html], i) => `<div class="pane" data-pane="${k}"${i ? ' hidden' : ''}>${html}</div>`).join('')}</details></section>`;
+const tabbed = (id, tabs, { open = true, strip = '' } = {}) => `<section class="tabbed" id="${id}"><details${open ? ' open' : ''}><summary><span class="tabs">${tabs.map(([k, label], i) => `<button type="button" class="tab${i ? '' : ' on'}" data-tab="${k}">${label}</button>`).join('')}</span>${strip}<span class="fold"></span></summary>${tabs.map(([k, , html], i) => `<div class="pane" data-pane="${k}"${i ? ' hidden' : ''}>${html}</div>`).join('')}</details></section>`;
 
 const ago = (ts, now) => {
   const t = Date.parse(String(ts).replace(' ', 'T'));
@@ -144,6 +144,7 @@ const ago = (ts, now) => {
 
 const mdLite = (md) => esc(md)
   .replace(/^### (.+)$/gm, '<h4>$1</h4>').replace(/^## (.+)$/gm, '<h3>$1</h3>').replace(/^# (.+)$/gm, '<h3>$1</h3>')
+  .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, t, h) => (/^https?:/.test(h) ? `<a href="${h}" target="_blank" rel="noopener">${t}</a>` : /^[\w./-]+\.md$/.test(h) ? `<a href="/interview-prep/coach/${h}" target="_blank">${t}</a>` : t))
   .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>')
   .replace(/^(?:- |\* )(.+)$/gm, '<li>$1</li>').replace(/(<li>.*<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`)
   .replace(/\n{2,}/g, '<br><br>');
@@ -189,19 +190,26 @@ const LIVE_JS = `
 export function render(data, { now = Date.now(), generatedAt = new Date(now).toISOString(), live = false } = {}) {
   const { tracker, pipeline, heartbeat, inbox, freelance, coach, apps = [] } = data;
   const running = data.running || {};
+  const agentState = (a) => { const h = heartbeat.latest[a]; return running[a] ? 'run' : !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'skip' ? 'skip' : 'ok'; };
+  const STATE_WORD = { run: 'working now', ok: 'last run fine', skip: 'nothing to do', error: 'last run failed', never: 'never ran' };
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
     const r = running[a];
-    if (r) return `<tr class="run"><td>${esc(a)}</td><td><span class="spin"></span>running${r.total ? ` · ${r.done}/${r.total}` : ''}</td><td>for ${dur(r.seconds)}</td><td></td><td>${esc(r.last || '')}</td></tr>`;
-    const cls = !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'skip' ? 'skip' : 'ok';
-    return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(h.status) : 'never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? `${h.seconds}s` : ''}</td><td>${esc(h?.note || '')}</td></tr>`;
+    if (r) return `<tr class="run"><td>${esc(a)}</td><td><span class="spin" aria-hidden="true"></span>Working${r.total ? `, ${r.done} of ${r.total}` : ''}</td><td>for ${dur(r.seconds)}</td><td></td><td>${esc(r.last || '')}</td></tr>`;
+    const cls = agentState(a);
+    return `<tr class="${cls}"><td>${esc(a)}</td><td>${h ? esc(STATE_WORD[cls]) : 'Never ran'}</td><td title="${esc(h?.ts || '')}">${h ? ago(h.ts, now) : ''}</td><td>${h ? dur(h.seconds) : ''}</td><td>${esc(h?.note || '')}</td></tr>`;
   }).join('');
-  const needs = [
-    ...(freelance.paused ? [] : freelance.drafts).filter((d) => !/^auto/i.test(d.channel)).map((d) => `<li><span class="tag draft">send</span> ${esc(d.title)} <em>${esc(d.channel)}</em></li>`),
-    ...inbox.map((i) => `<li><span class="tag inbox">inbox</span> ${esc(i)}</li>`),
+  const strip = `<span class="strip" aria-label="Agent status">${AGENTS.filter((a) => !(a === 'prospector' && freelance.paused)).map((a) => { const st = agentState(a); return `<span class="ag ag-${st}" title="${esc(a)}: ${STATE_WORD[st]}">${esc(a)}</span>`; }).join('')}</span>`;
+  const linkify = (t) => esc(t).replace(/https?:\/\/[^\s<]+/g, (u) => { let host = u; try { const x = new URL(u.replace(/&amp;/g, '&')); host = x.hostname.replace(/^www\./, '') + (x.pathname.length > 1 ? x.pathname.split('/').slice(0, 2).join('/') : ''); } catch {} return `<a href="${u}" target="_blank" rel="noopener noreferrer">${host}</a>`; });
+  const questions = [
+    ...(freelance.paused ? [] : freelance.drafts).filter((d) => !/^auto/i.test(d.channel)).map((d) => `<li><b>Send</b> ${esc(d.title)} <em>${esc(d.channel)}</em></li>`),
+    ...inbox.map((i) => `<li>${linkify(String(i).replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s+—\s+/, ''))}</li>`),
   ];
+  const ready = apps.filter((c) => c.stage === 'ready').sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const applyNext = ready.slice(0, 5).map((c) => `<li class="nx"><span class="nx-score s-${c.score >= 4 ? 'hi' : c.score >= 3.5 ? 'good' : 'mid'}">${c.score != null ? c.score.toFixed(1) : '–'}</span><span class="nx-what"><a href="#app-${c.num}"><strong>${esc(c.company)}</strong></a><span>${esc(c.role)}</span></span><span class="nx-go">${c.postingHref ? `<a href="${esc(c.postingHref)}" target="_blank" rel="noopener noreferrer">Posting</a>` : ''}${c.pdfHref ? `<a href="${esc(c.pdfHref)}" target="_blank">CV</a>` : ''}</span></li>`).join('');
+  const needsCount = questions.length + ready.length;
   const pendingRows = pipeline.pending.slice(0, 100).map((p) => `<tr><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" rel="noopener">${esc(p.title || p.url)}</a></td><td>${esc(p.location)}</td><td>${esc(p.posted)}</td></tr>`).join('');
-  const coachCards = coach.index.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="prio">P${esc(s.priority)}</span> ${esc(s.subject)} <span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span> <em>${(s.applications || []).length} application(s)</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => `<li>${esc(a.tracker || '')} ${esc(a.company || '')} — ${esc(a.role || '')} <em>${esc(a.status || '')}</em></li>`).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
+  const coachCards = coach.index.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="prio" title="priority ${esc(s.priority)} of 5">P${esc(s.priority)}</span><span class="subj">${esc(s.subject)}</span><span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span><em>${(s.applications || []).length} roles</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => `<li>${esc(a.tracker || '')} ${esc(a.company || '')} — ${esc(a.role || '')} <em>${esc(a.status || '')}</em></li>`).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
   const draftCards = freelance.drafts.map((d) => {
     const isEmail = /^email$/i.test(d.channel) && /@/.test(d.to);
     const action = isEmail
@@ -214,55 +222,85 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Career Ops Board</title>
+<title>Career Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&family=Big+Shoulders+Display:wght@700&display=swap" rel="stylesheet">
 ${live ? '<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>' : '<meta http-equiv="refresh" content="300">'}
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#5f6b7a;--line:#e3e7ec;--acc:#2f6fed;--ok:#1f9d55;--warm:#d98e04;--bad:#d64545;--chip:#eef2f7}
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1318;--card:#171c23;--ink:#e6e9ee;--mut:#9aa6b2;--line:#263040;--acc:#6ea0ff;--ok:#3fbf7f;--warm:#f2b33d;--bad:#ff6b6b;--chip:#1f2833}}
-:root[data-theme=dark]{--bg:#0f1318;--card:#171c23;--ink:#e6e9ee;--mut:#9aa6b2;--line:#263040;--acc:#6ea0ff;--ok:#3fbf7f;--warm:#f2b33d;--bad:#ff6b6b;--chip:#1f2833}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-main{max-width:1200px;margin:0 auto;padding:16px}header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
-h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 10px}h3{font-size:15px;margin:14px 0 6px}h4{font-size:14px;margin:10px 0 4px}
-.meta{color:var(--mut);font-size:13px}section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
-.grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
-.stats{display:flex;flex-wrap:wrap;gap:8px}.stat{background:var(--chip);border-radius:8px;padding:8px 12px;min-width:92px}.stat b{display:block;font-size:20px}.stat span{font-size:12px;color:var(--mut)}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:600}
-.wrap{overflow-x:auto}td.num{white-space:nowrap}td.notes{color:var(--mut);max-width:360px}
-tr.error td:first-child{color:var(--bad)}tr.ok td:first-child{color:var(--ok)}tr.skip td:first-child{color:var(--mut)}tr.never td{color:var(--mut)}
-.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--chip);color:var(--mut);vertical-align:middle}
-.tag.apply{background:var(--ok);color:#fff}.tag.draft{background:var(--warm);color:#000}.tag.inbox{background:var(--acc);color:#fff}.tag.gap{background:var(--bad);color:#fff}.tag.refresh{background:var(--warm);color:#000}.tag.strong{background:var(--ok);color:#fff}
-.state{font-size:12px;padding:1px 7px;border-radius:6px;background:var(--chip)}.s-Applied,.s-Responded,.s-Interview,.s-Offer,.s-Hired{background:var(--ok);color:#fff}.s-Rejected,.s-Discarded,.s-SKIP{opacity:.65}
-ul{margin:6px 0;padding-left:20px}li{margin:3px 0}em{color:var(--mut);font-style:normal;font-size:12px}
-details{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}.prio{font-weight:700;color:var(--acc)}pre{white-space:pre-wrap;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--chip);padding:10px;border-radius:8px}
-.btn{font:inherit;font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--chip);color:var(--ink);cursor:pointer}.btn.send{background:var(--ok);color:#fff;border-color:transparent}.btn.mark{background:var(--warm);color:#000;border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:12px;color:var(--mut)}
-.md{font-size:14px}.empty{color:var(--mut);font-style:italic}.pill-alert{background:var(--bad);color:#fff;padding:2px 8px;border-radius:999px;font-size:12px}
-.needs-hint{font-size:13px;color:var(--mut);margin:0 0 6px}
-.flow{display:flex;flex-direction:column;gap:22px}.frow{display:grid;grid-template-columns:minmax(0,420px) 1fr;gap:10px 18px;align-items:center;position:relative}
-.fbox{position:relative;overflow:hidden;border:2px solid var(--ink);border-radius:10px;padding:10px 14px;background:var(--card)}.fbox i{position:absolute;inset:0 auto 0 0;background:var(--ok);opacity:.18}
-.fbox b{position:relative;font-size:24px;margin-right:8px}.fbox b small{font-size:14px;color:var(--mut)}.fbox span{position:relative;font-weight:600}.fbox em{position:relative;display:block}
-.fbox.mut{border-style:dashed;border-color:var(--mut)}.fbox.go{border-color:var(--ok)}
-.frow:not(:last-child) .fbox::after{content:'↓';position:absolute;left:50%;bottom:-24px;font-size:18px;color:var(--mut)}.frow .fbox{overflow:visible}.frow .fbox i{border-radius:8px 0 0 8px}
-.fside{display:flex;flex-wrap:wrap;gap:6px}.fdrop{font-size:13px;color:var(--mut);border:1px dashed var(--line);border-radius:8px;padding:4px 10px}.fdrop::before{content:'↘ '}.fdrop b{color:var(--ink)}
-@media(max-width:640px){.frow{grid-template-columns:1fr}}
-.cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}.col{min-width:0}@media(max-width:900px){.cols{grid-template-columns:1fr}}
-.cols .frow{grid-template-columns:minmax(0,1fr) minmax(0,.8fr)}
-.tabbed>details{border:0;padding:0;margin:0}.tabbed summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.tabbed summary::-webkit-details-marker{display:none}
-.tabs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.tab{font:inherit;font-size:14px;font-weight:600;padding:6px 14px;border:0;background:var(--card);color:var(--mut);cursor:pointer}.tab+.tab{border-left:1px solid var(--line)}.tab.on{background:var(--chip);color:var(--ink)}
-.fold::after{content:'▾ collapse';font-size:12px;color:var(--mut)}.tabbed details:not([open]) .fold::after{content:'▸ expand'}.pane{margin-top:10px}${APPLICATIONS_CSS}
-.live{position:fixed;right:12px;bottom:12px;z-index:9;font-size:12px;padding:4px 10px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--mut)}.live.on{color:var(--ok)}.live.off{color:var(--warm)}
-tr.run td:first-child{color:var(--acc);font-weight:600}.spin{display:inline-block;width:9px;height:9px;margin-right:6px;border:2px solid var(--acc);border-right-color:transparent;border-radius:50%;animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+:root{--paper:#EEF1EC;--card:#FAFBF8;--ink:#17212B;--slate:#5A6673;--rule:#D4DAD2;--go:#1F7A57;--wait:#A86A12;--stop:#B23B3B;--link:#2B55B8;--tint:#E3E8E1;--go-tint:#DCEBE3;--on-go:#fff;--on-wait:#fff;
+--bg:var(--paper);--mut:var(--slate);--line:var(--rule);--acc:var(--link);--ok:var(--go);--warm:var(--wait);--bad:var(--stop);--chip:var(--tint);
+--num:'Big Shoulders Display','Arial Narrow',sans-serif;--text:'Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--paper:#12171C;--card:#192028;--ink:#E4E8EC;--slate:#93A0AD;--rule:#2A333D;--go:#4CB98A;--wait:#E0A245;--stop:#F07B7B;--link:#8AAEFF;--tint:#222B35;--go-tint:#1D3A2F;--on-go:#0E1A14;--on-wait:#1F1606}}
+:root[data-theme=dark]{--paper:#12171C;--card:#192028;--ink:#E4E8EC;--slate:#93A0AD;--rule:#2A333D;--go:#4CB98A;--wait:#E0A245;--stop:#F07B7B;--link:#8AAEFF;--tint:#222B35;--go-tint:#1D3A2F;--on-go:#0E1A14;--on-wait:#1F1606}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 var(--text);-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-underline-offset:2px}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--link);outline-offset:2px;border-radius:4px}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 64px}
+header{margin:4px 0 18px}h1{font:700 30px/1 var(--num);letter-spacing:.01em;margin:0 0 6px}.lede{margin:0;font-size:18px;max-width:70ch}.stamp{color:var(--slate);font-size:14px}
+h2{font-size:18px;font-weight:700;margin:0 0 12px;display:flex;align-items:baseline;gap:8px}h3{font-size:15px;font-weight:700;margin:16px 0 6px;color:var(--slate)}h4{font-size:15px;margin:12px 0 4px}
+.count{font:700 22px/1 var(--num);color:var(--wait)}
+section{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+.hint{font-size:14px;color:var(--slate);margin:-4px 0 10px}.empty{color:var(--slate)}
+table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--rule);vertical-align:top}th{color:var(--slate);font-weight:600}
+.wrap{overflow-x:auto}
+tr.error td:first-child,tr.error td:nth-child(2){color:var(--stop);font-weight:700}tr.skip td,tr.never td{color:var(--slate)}tr.ok td:first-child{color:var(--ink)}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--tint);color:var(--slate);vertical-align:middle}
+.tag.gap{background:var(--stop);color:#fff}.tag.refresh{background:var(--wait);color:var(--on-wait)}.tag.strong{background:var(--go);color:var(--on-go)}
+.state{font-size:12px;padding:1px 8px;border-radius:999px;background:var(--tint)}.s-Applied,.s-Responded,.s-Interview,.s-Offer,.s-Hired{background:var(--go);color:var(--on-go)}
+ul,ol{margin:6px 0;padding-left:20px}li{margin:4px 0}em{color:var(--slate);font-style:normal;font-size:13px}
+details{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;margin:6px 0}summary{cursor:pointer}
+pre{white-space:pre-wrap;font:13px/1.45 ui-monospace,Menlo,monospace;background:var(--tint);padding:10px;border-radius:8px}
+.btn{font:inherit;font-size:14px;padding:6px 12px;border-radius:8px;border:1px solid var(--rule);background:var(--tint);color:var(--ink);cursor:pointer}.btn.send{background:var(--go);color:var(--on-go);border-color:transparent}.btn.mark{background:var(--wait);color:var(--on-wait);border-color:transparent}.btn:disabled{opacity:.5;cursor:default}.actions{margin:8px 0}.result{font-size:13px;color:var(--slate)}
+.md{font-size:15px;max-width:72ch}
+/* Needs you */
+.qs{list-style:none;padding:0}.qs li{padding:10px 12px;border-left:3px solid var(--wait);background:var(--tint);border-radius:0 8px 8px 0;margin:6px 0;font-size:15px}
+.nxs{list-style:none;padding:0;margin:4px 0}.nx{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}.nx:last-child{border-bottom:0}
+.nx-score{font:700 24px/1 var(--num);text-align:center;padding:5px 0;border-radius:8px}.nx-what{display:flex;flex-direction:column;min-width:0}.nx-what a{color:var(--ink);text-decoration:none}.nx-what a:hover strong{text-decoration:underline}.nx-what span{font-size:14px;color:var(--slate);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nx-go{display:flex;gap:6px}.nx-go a,.links a{font-size:14px;padding:5px 11px;border-radius:8px;border:1px solid var(--rule);text-decoration:none;background:var(--card)}.nx-go a:hover,.links a:hover{border-color:var(--link)}
+.more-link{margin:10px 0 0;font-size:15px}
+@media(max-width:520px){.nx{grid-template-columns:44px minmax(0,1fr)}.nx-go{grid-column:2}}
+/* Learn */
+details.subject{border:0;border-bottom:1px solid var(--rule);border-radius:0;padding:8px 0;margin:0}details.subject>summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}.prio{font:700 18px/1 var(--num);color:var(--link);min-width:24px}.subj{font-weight:700;flex:1 1 200px}
+details.notes-md{margin-top:14px}details.notes-md>summary{font-weight:700}
+/* Flow: the one loud element — big condensed numerals */
+.flow{display:flex;flex-direction:column;gap:20px}.frow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.75fr);gap:8px 16px;align-items:center;position:relative}
+.fbox{position:relative;display:flex;align-items:center;gap:14px;border:1.5px solid var(--ink);border-radius:10px;padding:8px 14px;background:var(--card)}
+.fbox i{position:absolute;inset:0 auto 0 0;background:var(--go-tint);border-radius:8px 0 0 8px}
+.fbox b{position:relative;font:700 44px/1 var(--num);flex:none;width:96px;letter-spacing:.01em;white-space:nowrap}.fbox b small{font-size:20px;color:var(--slate);margin-left:2px}
+.flabel{position:relative;display:flex;flex-direction:column}.flabel>span{font-weight:700}.flabel em{font-size:13px}
+.fbox.mut{border-style:dashed;border-color:var(--slate)}.fbox.go{border-color:var(--go)}.fbox.you{border-color:var(--wait);border-width:2px}
+.frow:not(:last-child) .fbox::after{content:'';position:absolute;left:34px;bottom:-21px;width:1.5px;height:20px;background:var(--slate)}
+.fside{display:flex;flex-wrap:wrap;gap:6px}.fdrop{font-size:13px;color:var(--slate)}.fdrop b{font:700 18px/1 var(--num);color:var(--ink);margin-right:3px}.fdrop::before{content:'';display:inline-block;width:12px;height:1.5px;background:var(--slate);vertical-align:middle;margin-right:6px}
+@media(max-width:520px){.frow{grid-template-columns:1fr}.fside{padding-left:34px}}
+/* Layout: the sketch — Needs you + Learn | Flow + Applications; phone puts Needs you first */
+.cols{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:16px;align-items:start}.col{min-width:0}
+@media(max-width:960px){.cols{display:flex;flex-direction:column;gap:0}.col{display:contents}#needs{order:1}#flow{order:2}#applications{order:3}#learn{order:4}}
+/* Tabbed panels */
+.tabbed{padding:10px 14px}.tabbed>details{border:0;padding:0;margin:0}.tabbed summary{list-style:none;display:flex;align-items:center;gap:12px;flex-wrap:wrap}.tabbed summary::-webkit-details-marker{display:none}
+.tabs{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;flex:none}.tab{font:inherit;font-size:14px;font-weight:700;padding:6px 14px;border:0;background:var(--card);color:var(--slate);cursor:pointer}.tab+.tab{border-left:1px solid var(--rule)}.tab.on{background:var(--tint);color:var(--ink)}
+.fold{margin-left:auto}.fold::after{content:'Hide';font-size:13px;color:var(--slate)}.tabbed details:not([open]) .fold::after{content:'Show'}.pane{margin-top:12px}
+.strip{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--slate)}.ag::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--rule);vertical-align:1px}
+.ag-ok::before{background:var(--go)}.ag-skip::before{background:var(--slate)}.ag-error{color:var(--stop);font-weight:700}.ag-error::before{background:var(--stop)}.ag-run{color:var(--link);font-weight:700}.ag-run::before{background:var(--link);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+${APPLICATIONS_CSS}
+.live{position:fixed;right:12px;bottom:12px;z-index:9;font-size:13px;padding:5px 11px;border-radius:999px;background:var(--card);border:1px solid var(--rule);color:var(--slate)}.live.on{color:var(--go)}.live.off{color:var(--wait)}
+tr.run td:first-child{color:var(--link);font-weight:700}.spin{display:inline-block;width:10px;height:10px;margin-right:6px;border:2px solid var(--link);border-right-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-1px}@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spin,.ag-run::before{animation:none}}
 </style></head><body>${live ? '<div id="live" class="live">● connecting…</div>' : ''}<main>
-<header><h1>Career Ops Board</h1><div class="meta">${live ? `${Object.keys(running).length ? `${Object.keys(running).length} agent(s) running · ` : ''}` : `generated ${esc(generatedAt)} · auto-refresh 5 min`}${freelance.paused ? ' · <span class="pill-alert">freelance paused</span>' : ''}</div></header>
+<header><h1>Career Ops</h1><p class="lede">${ready.length ? `${ready.length} role${ready.length > 1 ? 's are' : ' is'} ready for you to apply to` : 'No roles are waiting on you'}${questions.length ? `, and ${questions.length} question${questions.length > 1 ? 's need' : ' needs'} an answer` : ''}.${live && Object.keys(running).length ? ` ${Object.keys(running).length} agent${Object.keys(running).length > 1 ? 's are' : ' is'} working.` : ''}${live ? '' : ` <span class="stamp">Snapshot from ${esc(generatedAt.slice(0, 16).replace('T', ' '))}</span>`}</p></header>
 
 ${tabbed('ops', [
-  ['agents', 'Agents', `<div class="wrap"><table><thead><tr><th>agent</th><th>last status</th><th>when</th><th>took</th><th>note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
-  ['history', 'History', `<div class="wrap"><table><thead><tr><th>when</th><th>agent</th><th>status</th><th>took</th><th>note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${h.seconds}s</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
-])}
+  ['agents', 'Agents', `<div class="wrap"><table><thead><tr><th>Agent</th><th>State</th><th>When</th><th>Took</th><th>Note</th></tr></thead><tbody>${agentRows}</tbody></table></div>`],
+  ['history', 'History', `<div class="wrap"><table><thead><tr><th>When</th><th>Agent</th><th>State</th><th>Took</th><th>Note</th></tr></thead><tbody>${heartbeat.history.filter((h) => h.status !== 'skip').slice(0, 60).map((h) => `<tr class="${esc(h.status)}"><td>${esc(h.ts)}</td><td>${esc(h.agent)}</td><td>${esc(h.status)}</td><td>${dur(Number(h.seconds) || 0)}</td><td>${esc(h.note)}</td></tr>`).join('')}</tbody></table></div>`],
+], { open: false, strip })}
 
 <div class="cols">
 <div class="col">
-<section><h2>Needs you (${needs.length + tracker.readyToApply.length})</h2>${tracker.readyToApply.length ? `<p class="needs-hint"><a href="#applications">${tracker.readyToApply.length} application(s) ready to apply</a> — see Applications below.</p>` : ''}${needs.length ? `<ul>${needs.join('')}</ul>` : (tracker.readyToApply.length ? '' : '<p class="empty">Nothing waiting on you.</p>')}</section>
-<section><h2>Learn — interview prep</h2>${coach.summary ? `<div class="md">${mdLite(coach.summary)}</div>` : '<p class="empty">Coach has not run yet.</p>'}${coachCards}</section>
+<section id="needs"><h2>Needs you <span class="count">${needsCount}</span></h2>
+${questions.length ? `<h3>Questions</h3><ul class="qs">${questions.join('')}</ul>` : ''}
+${ready.length ? `<h3>Apply next</h3><ol class="nxs">${applyNext}</ol>${ready.length > 5 ? `<p class="more-link"><a href="#applications">All ${ready.length} ready roles</a></p>` : ''}` : ''}
+${needsCount ? '' : '<p class="empty">Nothing is waiting on you. New fit roles show up here as soon as their CV is ready.</p>'}
+</section>
+<section id="learn"><h2>Learn</h2>${coach.index.length ? `<p class="hint">Interview subjects, most urgent first. Each one lists the roles it helps with.</p>${coachCards}` : '<p class="empty">The Coach builds this list every night from your active roles.</p>'}${coach.summary ? `<details class="notes-md"><summary>Coach’s notes for this week</summary><div class="md">${mdLite(coach.summary)}</div></details>` : ''}</section>
 </div>
 <div class="col">
 ${renderFlow(data)}
@@ -271,8 +309,8 @@ ${renderApplications(apps)}
 </div>
 
 ${tabbed('leads', [
-  ['pending', `Pending leads (${pipeline.pending.length})`, `<div class="wrap">${pendingRows ? `<table><thead><tr><th>company</th><th>title</th><th>location</th><th>posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">Queue empty — Scout will fill it.</p>'}</div>`],
-  ['freelance', `Freelance${freelance.paused ? ' (paused)' : ''}`, `${freelance.paused ? '<p class="empty">Paused — data/freelance/PAUSE</p>' : ''}
+  ['pending', `Pending leads (${pipeline.pending.length})`, `<div class="wrap">${pendingRows ? `<table><thead><tr><th>Company</th><th>Role</th><th>Location</th><th>Posted</th></tr></thead><tbody>${pendingRows}</tbody></table>` : '<p class="empty">The queue is empty. Scout refills it from the reserve every 5 minutes.</p>'}</div>`],
+  ['freelance', `Freelance${freelance.paused ? ' (paused)' : ''}`, `${freelance.paused ? '<p class="empty">Freelance outreach is paused. Delete data/freelance/PAUSE to resume it.</p>' : ''}
 <h3>Drafts awaiting you (${freelance.drafts.length})</h3>${draftCards || '<p class="empty">No drafts.</p>'}
 <h3>Sent (${freelance.sent.length})</h3><div class="wrap">${sentRows ? `<table><thead><tr><th>when</th><th>channel</th><th>to</th><th>lead</th><th>result</th></tr></thead><tbody>${sentRows}</tbody></table>` : '<p class="empty">Nothing sent yet.</p>'}</div>
 <h3>Leads (${freelance.leads.length})</h3><div class="wrap">${leadRows ? `<table><thead><tr><th>id</th><th>found</th><th>source</th><th>link</th><th>title</th><th>budget</th></tr></thead><tbody>${leadRows}</tbody></table>` : '<p class="empty">Prospector has not run yet.</p>'}</div>`],
