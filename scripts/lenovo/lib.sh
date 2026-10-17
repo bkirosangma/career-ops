@@ -131,7 +131,10 @@ pending_count() {
 run_with_timeout() {
   local limit="$1"; shift
   "$@" & local pid=$!
-  ( sleep "${limit%m}m" 2>/dev/null || sleep "$limit"; kill "$pid" 2>/dev/null ) & local killer=$!
+  # The watchdog must not hold the agent's lock (fd 9) and must take its sleep down with it: an orphaned
+  # `sleep 25m` holding fd 9 kept the next run locked out ("previous run still active").
+  ( trap 'kill "$s" 2>/dev/null; exit 0' TERM
+    sleep "${limit%m}m" 2>/dev/null & s=$!; wait "$s"; kill "$pid" 2>/dev/null ) 9>&- & local killer=$!
   wait "$pid"; local rc=$?
   kill "$killer" 2>/dev/null; wait "$killer" 2>/dev/null
   return $rc
