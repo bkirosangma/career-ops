@@ -158,16 +158,22 @@ function refreshBoard() {
 }
 let pending = null;
 const soon = () => { clearTimeout(pending); pending = setTimeout(refreshBoard, 1500); };  // debounce bursts of writes
+// Linux's recursive watch scans each new subfolder; a lock folder (backlog.md.lock) that vanishes
+// before the scan emits an ENOENT 'error' that, unhandled, kills the server. Rewatch instead.
+function watchDir(dir, full) {
+  try {
+    const w = watch(full, { recursive: true }, (_ev, file) => {
+      if (!file || /(^|\/)(\.git|\.locks|dashboard)(\/|$)|\.lock(\/|$)|\.tmp-\d+$|\.bak$/.test(String(file))) return;
+      soon();
+    });
+    w.on('error', (e) => { console.error(`watch ${dir}: ${e.code || e.message}; rewatching`); try { w.close(); } catch {} setTimeout(() => watchDir(dir, full), 2000); soon(); });
+  } catch (e) { console.error(`watch ${dir}: ${e.message}`); setTimeout(() => watchDir(dir, full), 10000); }
+}
 function startWatching() {
   for (const dir of ['data', 'reports', 'output', 'interview-prep']) {
     const full = path.join(ROOT, dir);
     if (!existsSync(full)) continue;
-    try {
-      watch(full, { recursive: true }, (_ev, file) => {
-        if (!file || /(^|\/)(\.git|\.locks|dashboard)(\/|$)|\.tmp-\d+$|\.bak$/.test(String(file))) return;
-        soon();
-      });
-    } catch (e) { console.error(`watch ${dir}: ${e.message}`); }
+    watchDir(dir, full);
   }
   setInterval(refreshBoard, 15000);  // running-agent progress and minute labels
   setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000);  // keep proxies/phones from idling the stream out

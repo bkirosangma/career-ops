@@ -12,3 +12,4 @@ PATH=/home/kiro/.local/bin:/usr/local/bin:/usr/bin:/bin
 25  */4 * * *    __REPO__/scripts/lenovo/prospector.sh   >/dev/null 2>&1   # Prospector: freelance leads + first contact
 50  2   * * *    __REPO__/scripts/lenovo/coach.sh        >/dev/null 2>&1   # Coach: nightly Learn section (Opus)
 @reboot          __REPO__/scripts/lenovo/serve-dashboard.sh >/dev/null 2>&1
+*/5 *   * * *    __REPO__/scripts/lenovo/serve-dashboard.sh >/dev/null 2>&1   # Board: restart if it died (no-op while running)
