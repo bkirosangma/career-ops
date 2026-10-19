@@ -295,7 +295,7 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
     ...inbox.map((i) => `<li>${linkify(String(i).replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s+—\s+/, ''))}</li>`),
   ];
   const ready = apps.filter((c) => c.stage === 'ready').sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
-  const applyNext = ready.slice(0, 5).map((c) => `<li class="nx"><span class="nx-score s-${c.score >= 4 ? 'hi' : c.score >= 3.5 ? 'good' : 'mid'}">${c.score != null ? c.score.toFixed(1) : '–'}</span><span class="nx-what"><a href="#app-${c.num}"><strong>${esc(c.company)}</strong></a><span>${esc(c.role)}</span></span><span class="nx-go">${c.postingHref ? `<a href="${esc(c.postingHref)}" target="_blank" rel="noopener noreferrer">Posting</a>` : ''}${c.pdfHref ? `<a href="${esc(c.pdfHref)}" target="_blank">CV</a>` : ''}</span></li>`).join('');
+  const applyNext = ready.slice(0, 5).map((c) => `<li class="nx"><span class="nx-score s-${c.score >= 4 ? 'hi' : c.score >= 3.5 ? 'good' : 'mid'}">${c.score != null ? c.score.toFixed(1) : '–'}</span><span class="nx-what"><a href="#app-${c.num}"><strong>${esc(c.company)}</strong></a><span>${esc(c.role)}</span></span><span class="nx-go">${c.postingHref ? `<a href="${esc(c.postingHref)}" target="_blank" rel="noopener noreferrer">Posting</a>` : ''}${c.pdfHref ? `<a href="${esc(c.pdfHref)}" target="_blank">CV</a>` : ''}${(data.packets || new Set()).has(String(c.num)) ? `<a href="/apply/${esc(c.num)}">Packet</a>` : ''}</span></li>`).join('');
   const needsCount = questions.length + ready.length;
   const pendingRows = pipeline.pending.slice(0, 100).map((p) => `<tr><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" rel="noopener">${esc(p.title || p.url)}</a></td><td>${esc(p.location)}</td><td>${esc(p.posted)}</td></tr>`).join('');
   const rowsByNum = new Map(tracker.rows.map((r) => [String(r.num), r]));
@@ -463,6 +463,7 @@ function collectBase(root) {
 function collectAll(root) {
   const d = collectBase(root);
   try { d.learn = collectLearn(root, new Map(d.tracker.rows.map((r) => [String(r.num), r]))); } catch (e) { console.error(`learn view failed: ${e.message}`); d.learn = { subjects: [] }; }
+  try { d.packets = new Set(readdirSync(path.join(root, 'output', 'apply-packets')).filter((f) => f.endsWith('.md')).map((f) => f.split('-')[0])); } catch { d.packets = new Set(); }
   d.limit = collectLimit(read(path.join(root, 'data', '.claude-limit')));
   try { d.apps = collectApplications(root, d.tracker.rows); } catch (e) { console.error(`applications view failed: ${e.message}`); d.apps = []; }
   return d;

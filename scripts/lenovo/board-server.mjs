@@ -31,7 +31,9 @@ import { collect, render } from '../../dashboard-html.mjs';
 import { collectRunning } from './live-state.mjs';
 import { collectTracker } from '../../dashboard-html.mjs';
 import { collectLearn, nextToStudy, nextJob, readProgress } from '../../learn-state.mjs';
-import { renderLearnHome, renderSubject, renderModule, renderNotFound } from '../../learn-html.mjs';
+import { renderLearnHome, renderSubject, renderModule, renderNotFound, renderPacket } from '../../learn-html.mjs';
+import { collectApplications } from '../../dashboard-applications.mjs';
+import { PACKET_DIR, packetName } from './apply-queue.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const args = process.argv.slice(2);
@@ -218,6 +220,13 @@ export function learnPage(pathname) {
   if (!m || !m.written) return { status: 404, html: renderNotFound('That module has not been written yet.') };
   return { status: 200, html: renderModule(s, m, readFileSync(path.join(ROOT, 'interview-prep', 'learn', s.slug, m.file), 'utf8')) };
 }
+export function packetPage(num) {
+  const rows = collectTracker(existsSync(path.join(ROOT, 'data', 'applications.md')) ? readFileSync(path.join(ROOT, 'data', 'applications.md'), 'utf8') : '').rows;
+  const card = collectApplications(ROOT, rows).find((c) => String(c.num) === String(num));
+  const file = card && path.join(ROOT, PACKET_DIR, packetName(card));
+  if (!card || !existsSync(file)) return { status: 404, html: renderNotFound('No application packet for that role yet. The Applier writes one within the hour for every role that is ready to apply.') };
+  return { status: 200, html: renderPacket(card, readFileSync(file, 'utf8')) };
+}
 export function saveProgress(root, { slug, n, done }) {
   if (!/^[\w.-]+$/.test(String(slug || '')) || !Number.isInteger(n) || n < 1) return { status: 400, error: 'bad module' };
   const file = path.join(root, 'data', 'learn-progress.json');
@@ -251,6 +260,13 @@ const server = http.createServer(async (req, res) => {
     if (Date.now() - board.at > 2000) buildBoard();
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(board.html);
+  }
+  const ap = url.pathname.match(/^\/apply\/(\d+)\/?$/);
+  if (ap) {
+    let out;
+    try { out = packetPage(ap[1]); } catch (e) { out = { status: 500, html: renderNotFound(`The packet page failed to render: ${e.message}`) }; }
+    res.writeHead(out.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(out.html);
   }
   if (url.pathname === '/learn' || url.pathname.startsWith('/learn/')) {
     let out;

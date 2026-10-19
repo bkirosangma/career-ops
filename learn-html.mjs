@@ -200,7 +200,7 @@ document.addEventListener('click', async (ev) => {
 const MERMAID = `<script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
 <script>if (window.mermaid) { const dark = matchMedia('(prefers-color-scheme: dark)').matches; mermaid.initialize({ startOnLoad: true, securityLevel: 'strict', theme: dark ? 'dark' : 'neutral' }); }</script>`;
 
-function page(title, body, { scripts = '' } = {}) {
+function page(title, body, { scripts = '', nav = 'learn' } = {}) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
@@ -209,7 +209,7 @@ ${FONT_LINKS}
 ${THEME_CSS}
 ${LEARN_CSS}
 </style></head><body>
-${topNav('learn')}
+${topNav(nav)}
 <main>
 ${body}
 </main>
@@ -301,6 +301,32 @@ ${html}
 </div>
 </div>
 </div>`, { scripts: /<pre class="mermaid">/.test(html) ? MERMAID : '' });
+}
+
+// /apply/<num>: an application packet (scripts/lenovo/apply-queue.mjs), answers visible with a copy button each.
+const COPY_JS = `
+for (const q of document.querySelectorAll('article blockquote')) {
+  if (/^Ask you:/.test(q.textContent.trim())) { q.classList.add('ask'); continue; }
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'copy'; b.textContent = 'Copy';
+  b.addEventListener('click', async () => { try { await navigator.clipboard.writeText(q.innerText.replace(/\\s*Copy(ied)?$/, '').trim()); b.textContent = 'Copied'; } catch { const r = document.createRange(); r.selectNodeContents(q); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = 'Selected: press Ctrl+C'; } setTimeout(() => { b.textContent = 'Copy'; }, 2500); });
+  q.appendChild(b);
+}`;
+const PACKET_CSS = `<style>article blockquote{position:relative;padding-right:84px;border-left-color:var(--go)}article blockquote.ask{border-left-color:var(--wait)}
+.copy{position:absolute;top:8px;right:8px;font:inherit;font-size:13px;font-weight:700;padding:4px 10px;border-radius:7px;border:1px solid var(--rule);background:var(--card);color:var(--ink);cursor:pointer}</style>`;
+export function renderPacket(card, md) {
+  const { html, toc } = renderModuleMd(md, { qaSections: [] });
+  return page(`Apply: ${card.company}`, `${PACKET_CSS}
+<p class="crumbs"><a href="/">Board</a> / Apply</p>
+<h1>${esc(card.company)}</h1>
+<p class="meta"><span>${esc(card.role)}</span>${card.score != null ? `<span>${esc(card.score)}/5</span>` : ''}<span>Tracker #${esc(card.num)}</span></p>
+<p class="pn">${card.postingHref ? `<a class="btn" href="${esc(card.postingHref)}" target="_blank" rel="noopener noreferrer">Open the posting</a>` : ''}${card.pdfHref ? `<a class="btn quiet" href="${esc(card.pdfHref)}" target="_blank">CV (PDF)</a>` : ''}</p>
+<p class="hint">Fill from this in your Mac session ("apply next"), or paste the answers yourself. You always click Submit. Answers marked "Ask you" need your call.</p>
+<div class="reader">
+<nav class="toc" aria-label="In this packet"><b>In this packet</b><ol>${toc.map((t) => `<li><a href="#${t.id}">${t.text}</a></li>`).join('')}</ol></nav>
+<div><article>
+${html.replace(/^<h1[^>]*>.*?<\/h1>\n?/, '')}
+</article></div>
+</div>`, { nav: 'board', scripts: `<script>${COPY_JS}</script>` });
 }
 
 export function renderNotFound(what) {

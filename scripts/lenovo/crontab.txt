@@ -9,6 +9,7 @@ PATH=/home/kiro/.local/bin:/usr/local/bin:/usr/bin:/bin
 */15 * * * *   __REPO__/scripts/lenovo/researcher.sh   >/dev/null 2>&1   # Researcher: fit (≥2.5) queue ≤50 (Sonnet)
 */30 * * * *   __REPO__/scripts/lenovo/writer.sh       >/dev/null 2>&1   # Writer: drains the CV queue, starts every 30 min (Opus)
 */15 * * * *   __REPO__/scripts/lenovo/watcher.sh      >/dev/null 2>&1   # Watcher: Gmail every 15 min, Sonnet only on new mail
+40  *   * * *    __REPO__/scripts/lenovo/applier.sh      >/dev/null 2>&1   # Applier: application packets for ready roles, ≤5 a run (Sonnet); you submit from the Mac
 25  */4 * * *    __REPO__/scripts/lenovo/prospector.sh   >/dev/null 2>&1   # Prospector: freelance leads + first contact
 50  *   * * *    __REPO__/scripts/lenovo/coach.sh        >/dev/null 2>&1   # Coach: subjects for Learn, once a day from 02:50 (hourly retry after a usage limit) (Opus)
 15  */2 * * *    __REPO__/scripts/lenovo/tutor.sh        >/dev/null 2>&1   # Tutor: one 90-min study module per run (Opus)

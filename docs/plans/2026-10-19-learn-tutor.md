@@ -54,3 +54,20 @@ Observed: `You've hit your session limit · resets 12:50pm (UTC)` (154 times in 
 - Watcher keeps a pending marker so mail fetched during a limit is classified on the next run.
 - Coach runs hourly with a once-a-day stamp, so a night lost to the limit is retried when the limit resets.
 - Board: `wait` agent state and a banner with the reset time.
+
+## 4. Applier (ruled 2026-10-19: Lenovo prep + Mac session)
+
+The Applier existed only as the interactive `apply` mode, so nothing happened between sessions and the board
+showed it as never run.
+
+- **Lenovo prep** (`scripts/lenovo/applier.sh`, Sonnet, hourly at :40, up to 5 roles a run): for each Ready to
+  apply role (Evaluated, ≥ 2.5, CV made) without a current packet, `apply-queue.mjs prep` checks liveness through
+  the ATS API (no browser), fetches the real form questions where the site publishes them (Greenhouse), notes
+  other rows at the same company and blacklist hits; the model writes
+  `output/apply-packets/<num>-<company>.md` (preflight, every answer with lengths, "Ask you" for anything
+  profile.yml does not settle, cover letter if asked, ATS quirks). A packet goes stale when the role's CV or
+  report changes and is rewritten.
+- **Board:** `/apply/<num>` shows the packet with a copy button per answer; "Apply next" links to it.
+- **Mac session** ("apply next" / "apply #N", procedure in `modes/_custom.md`): fills the form from the packet in
+  Chrome and stops at Submit. `apply-queue.mjs done <num>` after the user submits: Applied via set-status,
+  follow-up seeded, Applier heartbeat. Nothing ever submits automatically.
