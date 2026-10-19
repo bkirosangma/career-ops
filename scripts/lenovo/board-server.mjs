@@ -63,8 +63,24 @@ function logSend(channel, to, leadId, result) {
   appendFileSync(LOG, [new Date().toISOString().slice(0, 19).replace('T', ' '), channel, to, leadId, result].join('\t') + '\n');
 }
 
+// Body lines for smtpSend: plain text, or multipart/mixed with base64 attachments (76-char lines).
+export function mimeBody(body, attachments = []) {
+  const text = body.replace(/\r?\n/g, '\r\n').replace(/^\./gm, '..');
+  if (!attachments.length) return ['Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit', '', text];
+  const b = `=_co_${Date.now().toString(36)}`;
+  const out = [`Content-Type: multipart/mixed; boundary="${b}"`, '', `--${b}`, 'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit', '', text];
+  for (const a of attachments) {
+    const name = String(a.filename).replace(/["\r\n]/g, '');
+    out.push(`--${b}`, `Content-Type: ${a.type || 'application/octet-stream'}; name="${name}"`, 'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${name}"`, '', ...(Buffer.from(a.content).toString('base64').match(/.{1,76}/g) || []));
+  }
+  out.push(`--${b}--`);
+  return out;
+}
+
 // Minimal SMTP-over-TLS client (AUTH LOGIN), enough for smtp.gmail.com:465 with an app password.
-export function smtpSend({ host = 'smtp.gmail.com', port = 465, user, pass, to, subject, body }) {
+// attachments: [{ filename, content: Buffer, type }] → multipart/mixed; without them the message stays plain text.
+export function smtpSend({ host = 'smtp.gmail.com', port = 465, user, pass, to, subject, body, attachments = [] }) {
   return new Promise((resolve, reject) => {
     const sock = tls.connect({ host, port, servername: host }, () => step());
     let buf = ''; const q = [];
@@ -84,7 +100,7 @@ export function smtpSend({ host = 'smtp.gmail.com', port = 465, user, pass, to, 
     const msg = [
       `From: ${user}`, `To: ${to}`, `Subject: =?UTF-8?B?${b64(subject)}?=`, `Date: ${new Date().toUTCString()}`,
       `Message-ID: <${Date.now()}.${Math.random().toString(36).slice(2)}@career-ops>`, 'MIME-Version: 1.0',
-      'Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: 8bit', '', body.replace(/^\./gm, '..'),
+      ...mimeBody(body, attachments),
     ].join('\r\n');
     async function step() {
       try {
