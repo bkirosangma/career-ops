@@ -64,6 +64,9 @@ while [[ -n "$row" ]]; do
   regen_dashboard; data_push "writer: CV for #$num" || true   # each CV reaches the board and the Mac right away
   ready=$(ready_count "$APPLY_MIN")
   if [[ -z "$ONLY" ]] && (( ready >= READY_CAP )); then log "ready queue full ($ready/$READY_CAP), stopping"; break; fi
+  # The kill switch (data/PAUSE) stops a run between CVs, not only at the next cron tick: one run can drain
+  # the whole queue for hours (2026-10-19, a data-repo repair waited on it).
+  if [[ -f "$PAUSE_ALL" ]]; then log "paused ($PAUSE_ALL), stopping after #$num"; break; fi
   row=$(next_row)
 done
 agent_end "CVs generated $done_n, failed $fail_n; ready $(ready_count "$APPLY_MIN")/$READY_CAP"
