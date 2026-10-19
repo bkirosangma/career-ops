@@ -3,6 +3,7 @@
 //   interview-prep/coach/index.json + <slug>.md     subjects, picked nightly by the Coach
 //   interview-prep/learn/<slug>/plan.json            the Tutor's module plan for a subject
 //   interview-prep/learn/<slug>/<NN>-<module>.md     one study module per Tutor run
+//   interview-prep/learn/<slug>/imported.json        case studies brought in from elsewhere (not Tutor-written, n ≥ 101)
 //   interview-prep/learn/<slug>/attempts.json        failed attempts per module (the Tutor gives up after 2)
 //   data/learn-progress.json                         modules the user marked as studied ({"<slug>/<n>": "date"})
 //
@@ -22,6 +23,10 @@ const readJson = (p, fallback) => { try { return JSON.parse(readFileSync(p, 'utf
 export function readPlan(root, slug) {
   const plan = readJson(path.join(root, LEARN_DIR, slug, 'plan.json'), null);
   return plan && Array.isArray(plan.modules) ? plan : null;
+}
+export function readImported(root, slug, progress = {}) {
+  const list = readJson(path.join(root, LEARN_DIR, slug, 'imported.json'), { modules: [] }).modules || [];
+  return list.map((m) => ({ ...m, imported: true, file: moduleFile(m), written: existsSync(path.join(root, LEARN_DIR, slug, moduleFile(m))), studied: !!progress[`${slug}/${m.n}`] }));
 }
 export const readAttempts = (root, slug) => readJson(path.join(root, LEARN_DIR, slug, 'attempts.json'), {});
 export const readProgress = (root) => readJson(path.join(root, 'data', 'learn-progress.json'), {});
@@ -46,8 +51,9 @@ export function collectLearn(root, rowsByNum) {
     const plan = readPlan(root, slug);
     const attempts = readAttempts(root, slug);
     const modules = modulesOf(root, slug, plan, progress, attempts);
+    const imported = readImported(root, slug, progress);
     return {
-      ...s, ...impactOf(s, rowsByNum), slug, coachFile: s.file, coachMd: coach.files[s.file] || '', plan, modules,
+      ...s, ...impactOf(s, rowsByNum), slug, coachFile: s.file, coachMd: coach.files[s.file] || '', plan, modules, imported,
       written: modules.filter((m) => m.written).length, studied: modules.filter((m) => m.written && m.studied).length,
       done: plan ? modules.every((m) => m.written || m.skipped) : (attempts.plan || 0) >= MAX_ATTEMPTS,
     };
@@ -55,15 +61,15 @@ export function collectLearn(root, rowsByNum) {
   const dir = path.join(root, LEARN_DIR);
   const orphans = existsSync(dir)
     ? readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && !listed.has(d.name) && !d.name.startsWith('.'))
-      .map((d) => { const plan = readPlan(root, d.name); const modules = modulesOf(root, d.name, plan, progress, readAttempts(root, d.name)); return { slug: d.name, subject: plan?.subject || d.name, plan, modules, written: modules.filter((m) => m.written).length, studied: modules.filter((m) => m.written && m.studied).length, orphan: true }; })
-      .filter((s) => s.written > 0)
+      .map((d) => { const plan = readPlan(root, d.name); const modules = modulesOf(root, d.name, plan, progress, readAttempts(root, d.name)); const imported = readImported(root, d.name, progress); return { slug: d.name, subject: plan?.subject || d.name, plan, modules, imported, written: modules.filter((m) => m.written).length, studied: modules.filter((m) => m.written && m.studied).length, orphan: true }; })
+      .filter((s) => s.written > 0 || s.imported.some((m) => m.written))
     : [];
   return { subjects, orphans, summary: coach.summary, progress };
 }
 
 // The next written module the user has not studied, in impact order: what "Continue" opens.
 export function nextToStudy(learn) {
-  for (const s of learn.subjects) for (const m of s.modules) if (m.written && !m.studied) return { subject: s, module: m };
+  for (const s of learn.subjects) for (const m of [...s.imported, ...s.modules]) if (m.written && !m.studied) return { subject: s, module: m };
   return null;
 }
 

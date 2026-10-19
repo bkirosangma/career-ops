@@ -59,7 +59,8 @@ function nextCmd(root, out) {
   const s = job.subject;
   const drafts = path.join(REPO, 'batch', 'tutor-drafts', s.slug);
   mkdirSync(drafts, { recursive: true });
-  const base = { action: job.action, slug: s.slug, subject: s.subject, status: s.status, coachFile: path.join(root, s.coachFile), impact: s.impact };
+  const base = { action: job.action, slug: s.slug, subject: s.subject, status: s.status, coachFile: path.join(root, s.coachFile), impact: s.impact,
+    imported: s.imported.filter((m) => m.written).map((m) => path.join(root, LEARN_DIR, s.slug, m.file)) };
   const spec = job.action === 'plan'
     ? { ...base, draft: path.join(drafts, 'plan.json'), target: path.join(root, LEARN_DIR, s.slug, 'plan.json') }
     : { ...base, module: job.module, planFile: path.join(root, LEARN_DIR, s.slug, 'plan.json'),

@@ -214,7 +214,7 @@ export function learnPage(pathname) {
   const s = [...learn.subjects, ...learn.orphans].find((x) => x.slug === parts[0]);
   if (!s) return { status: 404, html: renderNotFound('There is no subject with that name. The Coach may have renamed it.') };
   if (parts.length === 1) return { status: 200, html: renderSubject(s, { tutorJob, rowsByNum }) };
-  const m = s.modules.find((x) => String(x.n) === parts[1]);
+  const m = [...s.modules, ...(s.imported || [])].find((x) => String(x.n) === parts[1]);
   if (!m || !m.written) return { status: 404, html: renderNotFound('That module has not been written yet.') };
   return { status: 200, html: renderModule(s, m, readFileSync(path.join(ROOT, 'interview-prep', 'learn', s.slug, m.file), 'utf8')) };
 }

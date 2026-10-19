@@ -24,6 +24,13 @@ import { collectApplications, renderApplications, APPLICATIONS_CSS, APPLICATIONS
 // Palette, type and base rules shared by the board and the Learn page (learn-html.mjs).
 export const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&family=Big+Shoulders+Display:wght@700&display=swap" rel="stylesheet">`;
+// The Board / Learn bar: identical markup and CSS on both pages, outside <main>, so it never moves.
+export const NAV_CSS = `.topnav{position:sticky;top:0;z-index:8;background:var(--paper);border-bottom:1px solid var(--rule);padding:0 16px}
+.topnav-in{max-width:1280px;margin:0 auto;display:flex;align-items:center;gap:6px;min-height:52px}
+.topnav .brand{font:700 22px/1 var(--num);letter-spacing:.01em;color:var(--ink);text-decoration:none;margin-right:auto}
+.topnav .nav{padding:6px 12px;border-radius:8px;color:var(--slate);text-decoration:none;font-weight:700;font-size:15px}
+.topnav .nav:hover{background:var(--tint);color:var(--ink)}.topnav .nav[aria-current=page]{background:var(--ink);color:var(--paper)}`;
+export const topNav = (current) => `<nav class="topnav" aria-label="Pages"><div class="topnav-in"><a class="brand" href="/">Career Ops</a><a class="nav" href="/"${current === 'board' ? ' aria-current="page"' : ''}>Board</a><a class="nav" href="/learn"${current === 'learn' ? ' aria-current="page"' : ''}>Learn</a></div></nav>`;
 export const THEME_CSS = `:root{--paper:#EEF1EC;--card:#FAFBF8;--ink:#17212B;--slate:#5A6673;--rule:#D4DAD2;--go:#1F7A57;--wait:#A86A12;--stop:#B23B3B;--link:#2B55B8;--tint:#E3E8E1;--go-tint:#DCEBE3;--on-go:#fff;--on-wait:#fff;
 --bg:var(--paper);--mut:var(--slate);--line:var(--rule);--acc:var(--link);--ok:var(--go);--warm:var(--wait);--bad:var(--stop);--chip:var(--tint);
 --num:'Big Shoulders Display','Arial Narrow',sans-serif;--text:'Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif}
@@ -369,12 +376,11 @@ ${APPLICATIONS_CSS}
 .live{position:fixed;right:12px;bottom:12px;z-index:9;font-size:13px;padding:5px 11px;border-radius:999px;background:var(--card);border:1px solid var(--rule);color:var(--slate)}.live.on{color:var(--go)}.live.off{color:var(--wait)}
 tr.run td:first-child{color:var(--link);font-weight:700}.spin{display:inline-block;width:10px;height:10px;margin-right:6px;border:2px solid var(--link);border-right-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-1px}@keyframes sp{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.spin,.ag-run::before{animation:none}}
-.topnav{display:flex;gap:6px;margin:0 0 6px}.topnav .nav{padding:5px 12px;border-radius:8px;color:var(--slate);text-decoration:none;font-weight:700;font-size:15px}.topnav .nav:hover{background:var(--tint);color:var(--ink)}.topnav .nav[aria-current=page]{background:var(--ink);color:var(--paper)}
+${NAV_CSS}
 .limit{margin:0 0 14px;padding:10px 14px;border-left:3px solid var(--wait);background:var(--tint);border-radius:0 8px 8px 0;font-size:15px}
 .ag-wait{color:var(--wait);font-weight:700}.ag-wait::before{background:var(--wait)}tr.wait td:first-child,tr.wait td:nth-child(2){color:var(--wait);font-weight:700}
 .learn-top{list-style:none;padding:0;margin:0}.learn-top li{padding:8px 0;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}.learn-top li:last-child{border-bottom:0}.learn-top a{font-weight:700}
-</style></head><body>${live ? '<div id="live" class="live">● connecting…</div>' : ''}<main>
-<nav class="topnav" aria-label="Pages"><a class="nav" href="/" aria-current="page">Board</a><a class="nav" href="/learn">Learn</a></nav>
+</style></head><body>${live ? '<div id="live" class="live">● connecting…</div>' : ''}${topNav('board')}<main>
 ${data.limit ? `<p class="limit" role="status">Claude's usage limit is reached. Agents that use Claude are paused and resume after ${esc(data.limit.until)}.</p>` : ''}
 <header><h1>Career Ops</h1><p class="lede">${ready.length ? `${ready.length} role${ready.length > 1 ? 's are' : ' is'} ready for you to apply to` : 'No roles are waiting on you'}${questions.length ? `, and ${questions.length} question${questions.length > 1 ? 's need' : ' needs'} an answer` : ''}.${live && Object.keys(running).length ? ` ${Object.keys(running).length} agent${Object.keys(running).length > 1 ? 's are' : ' is'} working.` : ''}${live ? '' : ` <span class="stamp">Snapshot from ${esc(generatedAt.slice(0, 16).replace('T', ' '))}</span>`}</p></header>
 

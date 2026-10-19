@@ -7,16 +7,18 @@
 // Rendered per request from learn-state.mjs. Model-written Markdown runs on the same origin as the board's
 // send buttons, so everything is escaped before any markup is added: no raw HTML passes through, links
 // must be http(s), and mermaid runs with securityLevel "strict".
-import { THEME_CSS, FONT_LINKS, mdLite } from './dashboard-html.mjs';
+import { THEME_CSS, FONT_LINKS, NAV_CSS, topNav, mdLite } from './dashboard-html.mjs';
 import { pad } from './learn-state.mjs';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const idOf = (t) => String(t).toLowerCase().replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'section';
 
 // Inline Markdown on already-escaped text. Code spans are cut out first so nothing inside them is touched.
+let imgBase = '';   // images in a module resolve next to it: /interview-prep/learn/<slug>/<file>
 function inline(t) {
   const codes = [];
   t = t.replace(/`([^`]+)`/g, (_m, c) => `\u0000${codes.push(c) - 1}\u0000`);
+  t = t.replace(/!\[([^\]]*)\]\(([\w.-]+\.(?:svg|png))\)/g, (_m, alt, f) => `<img src="${imgBase}${f}" alt="${alt}" loading="lazy">`);
   t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, x, h) => `<a href="${h}" target="_blank" rel="noopener noreferrer">${x}</a>`)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?![*\w])/g, '$1<em>$2</em>')
@@ -27,7 +29,8 @@ function inline(t) {
 // Markdown for Tutor modules: headings, paragraphs, lists (one nested level), tables, blockquotes, rules,
 // fenced code (```mermaid becomes a diagram). Under "## Self-check" and "## Interview questions" every
 // "### question" and what follows it become a <details> whose answer opens on click.
-export function renderModuleMd(md, { qaSections = ['Self-check', 'Interview questions'] } = {}) {
+export function renderModuleMd(md, { qaSections = ['Self-check', 'Interview questions'], base = '' } = {}) {
+  imgBase = base;
   const out = []; const toc = [];
   let para = [], list = null, table = null, quote = [], inQa = false, qaOpen = false;
   const flushPara = () => { if (para.length) out.push(`<p>${inline(para.join(' '))}</p>`); para = []; };
@@ -67,7 +70,7 @@ export function renderModuleMd(md, { qaSections = ['Self-check', 'Interview ques
       if (level === 1) continue;                       // the page header already shows the title
       if (level === 2) {
         closeQa();
-        inQa = qaSections.includes(text.replace(/&amp;/g, '&').trim());
+        inQa = qaSections.some((q) => text.replace(/&amp;/g, '&').trim().startsWith(q));
         const id = idOf(text); toc.push({ id, text });
         out.push(`<h2 id="${id}">${inline(text)}</h2>`);
         continue;
@@ -108,12 +111,8 @@ export function renderModuleMd(md, { qaSections = ['Self-check', 'Interview ques
 // ---------- page chrome ----------
 
 const LEARN_CSS = `
-main{max-width:1180px;margin:0 auto;padding:0 16px 72px}
-.topnav{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--rule);margin:0 -16px 24px;padding:0 16px}
-.topnav-in{max-width:1180px;margin:0 auto;display:flex;align-items:center;gap:6px;min-height:52px}
-.brand{font:700 22px/1 var(--num);letter-spacing:.01em;color:var(--ink);text-decoration:none;margin-right:auto}
-.topnav a.nav{padding:6px 12px;border-radius:8px;color:var(--slate);text-decoration:none;font-weight:700;font-size:15px}
-.topnav a.nav:hover{background:var(--tint);color:var(--ink)}.topnav a.nav[aria-current=page]{background:var(--ink);color:var(--paper)}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 72px}
+${NAV_CSS}
 h1{font:700 40px/1.05 var(--num);letter-spacing:.01em;margin:4px 0 8px;text-wrap:balance}
 .lede{font-size:18px;max-width:68ch;margin:0 0 20px}
 .crumbs{font-size:14px;color:var(--slate);margin:0 0 6px}.crumbs a{color:var(--slate)}
@@ -168,6 +167,7 @@ article code{font:14.5px/1.4 ui-monospace,Menlo,monospace;background:var(--tint)
 .code pre code{background:none;padding:0;overflow-wrap:normal}
 figure.diagram{margin:16px 0 22px;background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px;overflow-x:auto}
 figure.diagram pre.mermaid{margin:0;font:13px/1.4 ui-monospace,Menlo,monospace;white-space:pre}
+article img{display:block;max-width:100%;height:auto;margin:6px auto}
 blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--link);background:var(--tint);border-radius:0 8px 8px 0}
 article .wrap{overflow-x:auto;margin:12px 0 18px}article table{border-collapse:collapse;font-size:15px;width:100%}article th,article td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--rule);vertical-align:top}article th{color:var(--slate)}
 details.qa{border:1px solid var(--rule);border-radius:10px;background:var(--card);margin:10px 0;padding:0 16px}
@@ -209,8 +209,8 @@ ${FONT_LINKS}
 ${THEME_CSS}
 ${LEARN_CSS}
 </style></head><body>
+${topNav('learn')}
 <main>
-<nav class="topnav" aria-label="Pages"><div class="topnav-in"><a class="brand" href="/">Career Ops</a><a class="nav" href="/">Board</a><a class="nav" href="/learn" aria-current="page">Learn</a></div></nav>
 ${body}
 </main>
 <script>${PROGRESS_JS}</script>
@@ -219,14 +219,16 @@ ${scripts}
 }
 
 const segs = (mods) => `<span class="segs" aria-hidden="true">${mods.map((m) => `<span class="seg ${m.studied && m.written ? 'studied' : m.written ? 'ready' : m.skipped ? 'skipped' : ''}"></span>`).join('')}</span>`;
-const progressText = (s) => !s.plan ? 'Not planned yet' : `${s.studied} of ${s.modules.length} studied · ${s.written} written`;
+const caseText = (s) => { const n = (s.imported || []).filter((m) => m.written).length; return n ? ` · ${n} case stud${n === 1 ? 'y' : 'ies'}` : ''; };
+const progressText = (s) => (!s.plan ? 'Not planned yet' : `${s.studied} of ${s.modules.length} studied · ${s.written} written`) + caseText(s);
 
 // ---------- /learn ----------
 
 export function renderLearnHome(learn, { next = null, tutorJob = null, now = Date.now() } = {}) {
   const top = Math.max(1, ...learn.subjects.map((s) => s.impact));
-  const written = learn.subjects.reduce((a, s) => a + s.written, 0);
-  const studied = learn.subjects.reduce((a, s) => a + s.studied, 0);
+  const cases = (s) => (s.imported || []).filter((m) => m.written);
+  const written = learn.subjects.reduce((a, s) => a + s.written + cases(s).length, 0);
+  const studied = learn.subjects.reduce((a, s) => a + s.studied + cases(s).filter((m) => m.studied).length, 0);
   const tutorAt = (s) => tutorJob && tutorJob.subject.slug === s.slug
     ? (tutorJob.action === 'plan' ? 'The Tutor plans this one next' : `The Tutor writes module ${tutorJob.module.n} next`) : '';
   const rows = learn.subjects.map((s) => `<li class="srow">
@@ -235,8 +237,8 @@ export function renderLearnHome(learn, { next = null, tutorJob = null, now = Dat
   <div class="prog">${s.plan ? segs(s.modules) : ''}<span>${esc(progressText(s))}</span></div>
 </li>`).join('');
   const nextCard = next ? `<section class="panel next" aria-label="Next to study">
-  <div><p class="eyebrow">Study next · ${esc(next.subject.subject)}</p><h2>${esc(next.module.title)}</h2><p>Module ${next.module.n} of ${next.subject.modules.length} · about ${esc(next.module.minutes || 90)} minutes</p></div>
-  <a class="btn" href="/learn/${esc(next.subject.slug)}/${next.module.n}">Start module ${next.module.n}</a>
+  <div><p class="eyebrow">Study next · ${esc(next.subject.subject)}</p><h2>${esc(next.module.title)}</h2><p>${next.module.imported ? 'Case study' : `Module ${next.module.n} of ${next.subject.modules.length}`} · about ${esc(next.module.minutes || 90)} minutes</p></div>
+  <a class="btn" href="/learn/${esc(next.subject.slug)}/${next.module.n}">${next.module.imported ? 'Start case study' : `Start module ${next.module.n}`}</a>
 </section>` : `<section class="panel"><p class="empty">${written ? 'You have studied every module written so far. The Tutor adds one every two hours.' : 'The Tutor writes the first module within two hours, starting with your highest-impact subject.'}</p></section>`;
   const orphans = learn.orphans.length ? `<section class="panel"><h2>Other material</h2><p class="hint">Subjects the Coach no longer lists. The modules are kept.</p><ul class="subjects">${learn.orphans.map((s) => `<li class="srow"><span class="imp">–</span><div class="sname"><a href="/learn/${esc(s.slug)}">${esc(s.subject)}</a></div><div class="prog">${segs(s.modules)}<span>${esc(progressText(s))}</span></div></li>`).join('')}</ul></section>` : '';
   return page('Learn', `
@@ -267,6 +269,7 @@ export function renderSubject(s, { tutorJob = null, rowsByNum = new Map() } = {}
 <p class="lede">${s.status ? `<span class="tag ${esc(s.status)}">${esc(s.status)}</span> ` : ''}${esc(s.plan?.summary || s.why || '')}</p>
 <div class="cols2">
 <div>
+${(s.imported || []).some((m) => m.written) ? `<section class="panel"><h2>Case studies</h2><p class="hint">Material you already have for this subject. The Tutor's modules build on it.</p><ol class="mods">${s.imported.filter((m) => m.written).map((m, i) => `<li class="mod ${m.studied ? 'studied' : 'ready'}"><span class="n">${String.fromCharCode(65 + i)}</span><div><h3><a href="/learn/${esc(s.slug)}/${m.n}">${esc(m.title)}</a></h3>${m.summary ? `<p class="ex">${esc(m.summary)}</p>` : ''}</div><span class="state ${m.studied ? 'studied' : 'ready'}">${m.studied ? 'Studied' : 'Ready'}${m.minutes ? ` · ${esc(m.minutes)} min` : ''}</span></li>`).join('')}</ol></section>` : ''}
 <section class="panel"><h2>Modules</h2>${s.plan ? `<p class="hint">${progressText(s)}. Each module is about 90 minutes: reading, then a hands-on exercise.</p><ol class="mods">${mods}</ol>` : `<p class="empty">${tutorJob && tutorJob.subject.slug === s.slug ? 'The Tutor plans this subject on its next run.' : 'The Tutor has not planned this subject yet. It works through subjects in impact order.'}</p>`}</section>
 ${s.coachMd ? `<section class="panel"><details class="coach"><summary>The Coach's prep notes</summary><div class="md">${mdLite(s.coachMd)}</div></details></section>` : ''}
 </div>
@@ -277,14 +280,15 @@ ${s.coachMd ? `<section class="panel"><details class="coach"><summary>The Coach'
 // ---------- /learn/<slug>/<n> ----------
 
 export function renderModule(s, m, md) {
-  const { html, toc } = renderModuleMd(md);
-  const i = s.modules.findIndex((x) => x.n === m.n);
-  const prev = s.modules.slice(0, i).reverse().find((x) => x.written);
-  const next = s.modules.slice(i + 1).find((x) => x.written);
+  const { html, toc } = renderModuleMd(md, { base: `/interview-prep/learn/${s.slug}/` });
+  const list = m.imported ? s.imported : s.modules;
+  const i = list.findIndex((x) => x.n === m.n);
+  const prev = list.slice(0, i).reverse().find((x) => x.written);
+  const next = list.slice(i + 1).find((x) => x.written);
   return page(`${m.title} · ${s.subject}`, `
 <p class="crumbs"><a href="/learn">Learn</a> / <a href="/learn/${esc(s.slug)}">${esc(s.subject)}</a></p>
 <h1>${esc(m.title)}</h1>
-<p class="meta"><span>Module ${m.n} of ${s.modules.length}</span><span>About ${esc(m.minutes || 90)} minutes</span>${m.studied ? '<span>Studied</span>' : ''}</p>
+<p class="meta"><span>${m.imported ? 'Case study' : `Module ${m.n} of ${s.modules.length}`}</span><span>About ${esc(m.minutes || 90)} minutes</span>${m.studied ? '<span>Studied</span>' : ''}</p>
 <div class="reader">
 <nav class="toc" aria-label="In this module"><b>In this module</b><ol>${toc.map((t) => `<li><a href="#${t.id}">${t.text}</a></li>`).join('')}</ol></nav>
 <div>
@@ -293,7 +297,7 @@ ${html}
 </article>
 <div class="done-bar">
   <div><button type="button" class="btn${m.studied ? ' is-done' : ''}" data-progress data-slug="${esc(s.slug)}" data-n="${m.n}" aria-pressed="${m.studied}">${m.studied ? 'Studied' : 'Mark as studied'}</button> <span class="result" aria-live="polite"></span></div>
-  <div class="pn">${prev ? `<a class="btn quiet" href="/learn/${esc(s.slug)}/${prev.n}">Previous: module ${prev.n}</a>` : ''}${next ? `<a class="btn quiet" href="/learn/${esc(s.slug)}/${next.n}">Next: module ${next.n}</a>` : `<a class="btn quiet" href="/learn/${esc(s.slug)}">All modules</a>`}</div>
+  <div class="pn">${prev ? `<a class="btn quiet" href="/learn/${esc(s.slug)}/${prev.n}">Previous: ${m.imported ? esc(prev.title) : `module ${prev.n}`}</a>` : ''}${next ? `<a class="btn quiet" href="/learn/${esc(s.slug)}/${next.n}">Next: ${m.imported ? esc(next.title) : `module ${next.n}`}</a>` : `<a class="btn quiet" href="/learn/${esc(s.slug)}">All modules</a>`}</div>
 </div>
 </div>
 </div>`, { scripts: /<pre class="mermaid">/.test(html) ? MERMAID : '' });
