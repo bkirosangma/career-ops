@@ -48,12 +48,17 @@ while [[ -n "$row" ]]; do
   echo "$num" > "$INPROG"
   log "CV for #$num (score $score) — $repfile"
   sed -e "s#__REPORT__#$num#g" -e "s#__REPORT_FILE__#$repfile#g" "$REPO/scripts/lenovo/prompts/writer.md" > "$LOG_DIR/.writer-prompt-$num.md"
-  if run_with_timeout 25m claude_run "$MODEL_OPUS" "$LOG_DIR/.writer-prompt-$num.md" --max-turns 60 >>"$LOG" 2>&1; then
+  run_with_timeout 25m claude_run "$MODEL_OPUS" "$LOG_DIR/.writer-prompt-$num.md" --max-turns 60 >>"$LOG" 2>&1
+  rc=$?
+  rm -f "$LOG_DIR/.writer-prompt-$num.md"
+  if (( rc == EX_LIMIT )); then   # out of Claude usage: #$num stays ❌ and is first in line after the reset
+    regen_dashboard
+    agent_fail "stopped at #$num; CVs generated $done_n, failed $fail_n"
+  elif (( rc == 0 )); then
     done_n=$((done_n+1))
   else
     fail_n=$((fail_n+1)); log "WARN: writer failed for #$num"
   fi
-  rm -f "$LOG_DIR/.writer-prompt-$num.md"
   # A row whose PDF is still ❌ after its turn (failed, or the model stopped short) is not retried this run.
   SKIP="$SKIP $num"
   regen_dashboard; data_push "writer: CV for #$num" || true   # each CV reaches the board and the Mac right away

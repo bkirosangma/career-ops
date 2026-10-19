@@ -14,6 +14,17 @@ PARALLEL="${RESEARCH_PARALLEL:-3}"
 PIPELINE="$DATA/data/pipeline.md"
 BATCH="$REPO/batch"
 
+# Leads the batch-runner paused on a usage limit sit in batch-state as paused_rate_limit and, being in
+# batch-state, were never picked again. They produced nothing, so drop those rows: the URLs become
+# Pending candidates again (their reserved report numbers become harmless gaps).
+if [[ -f "$BATCH/batch-state.tsv" ]] && grep -q $'\tpaused_rate_limit\t' "$BATCH/batch-state.tsv"; then
+  n=$(grep -c $'\tpaused_rate_limit\t' "$BATCH/batch-state.tsv")
+  awk -F'\t' '$3 != "paused_rate_limit"' "$BATCH/batch-state.tsv" > "$BATCH/batch-state.tsv.tmp" && mv "$BATCH/batch-state.tsv.tmp" "$BATCH/batch-state.tsv"
+  log "re-queued $n leads paused by a usage limit"
+fi
+# Workers call the CLI directly, not through claude_run, so check the limit before starting them.
+claude_limited && agent_fail "not starting a batch"
+
 evaluated=$(fit_count 2.5)
 room=$(( CAP - evaluated ))
 if (( room <= 0 )); then
@@ -36,6 +47,7 @@ base=$(date +%s)
 { printf 'id\turl\tsource\tnotes\n'; i=0; for u in "${urls[@]}"; do i=$((i+1)); printf '%s\t%s\tscout\tauto-researcher\n' "$((base+i))" "$u"; done; } > "$BATCH/batch-input.tsv"
 log "evaluating ${#urls[@]} leads (evaluated $evaluated/$CAP, parallel $PARALLEL)"
 
+touch "$BATCH/.run-start"
 set +e
 timeout 110m "$BATCH/batch-runner.sh" --cli claude --model "$MODEL_SONNET" --parallel "$PARALLEL" --limit "${#urls[@]}" --skip-pdf >>"$LOG" 2>&1
 rc=$?
@@ -58,6 +70,12 @@ done < "$BATCH/tmp-dead.tsv"
 node scripts/lenovo/scout-queue.mjs refill --cap 100 >>"$LOG" 2>&1 || true
 # Seed follow-ups + status ledger are handled by set-status/outcome paths; nothing to do here.
 
+# A batch the runner paused on the usage limit: record the reset from a worker log, so every agent waits.
+paused_limit=0
+for f in $(find "$BATCH/logs" -name '*.log' -newer "$BATCH/.run-start" 2>/dev/null); do
+  note_claude_limit "$f" --any && { paused_limit=1; break; }
+done
 after=$(fit_count 2.5)
+(( paused_limit )) && agent_fail "batch paused; fit $evaluated→$after"
 if (( rc != 0 )); then agent_fail "batch-runner rc=$rc; evaluated $evaluated→$after"; fi
 agent_end "fit $evaluated→$after (+${#urls[@]} attempted)"

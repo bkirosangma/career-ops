@@ -60,10 +60,13 @@ gate=$(node scripts/lenovo/scout-queue.mjs gate "$INBOX" "$tmp/kept.txt"); log "
 if [[ -s "$tmp/kept.txt" ]]; then
   sed -E 's/^- \[ \] //' "$tmp/kept.txt" | split -l 40 - "$tmp/chunk."
   for chunk in "$tmp"/chunk.*; do
+    # Out of Claude usage: the rest go to the backlog untriaged, the same as a failed chunk.
+    if claude_limited; then log "triage skipped: Claude usage limit until $(claude_limit_until) (entries kept)"; break; fi
     # prompt via stdin: --disallowedTools is variadic and would swallow a positional prompt
     cat "$REPO/scripts/lenovo/prompts/scout-triage.md" "$chunk" \
-      | claude -p --model "$MODEL_HAIKU" --output-format text --disallowedTools "Bash,WebFetch,WebSearch,Write,Edit" 2>>"$LOG" \
-      | grep -E '^https?://' >> "$tmp/verdicts.tsv" || log "WARN: triage chunk failed (entries kept)"
+      | claude -p --model "$MODEL_HAIKU" --output-format text --disallowedTools "Bash,WebFetch,WebSearch,Write,Edit" > "$tmp/triage-out" 2>&1
+    note_claude_limit "$tmp/triage-out" && continue
+    grep -E '^https?://' "$tmp/triage-out" >> "$tmp/verdicts.tsv" || log "WARN: triage chunk failed (entries kept)"
   done
 fi
 add=$(node scripts/lenovo/scout-queue.mjs add "$tmp/kept.txt" "$tmp/verdicts.tsv"); log "backlog: $add"

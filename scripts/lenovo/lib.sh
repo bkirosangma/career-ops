@@ -33,6 +33,8 @@ LOCK_DIR="$DATA/data/.locks"; mkdir -p "$LOCK_DIR"
 LOG_DIR="$DATA/data/agent-logs"; mkdir -p "$LOG_DIR"
 HEARTBEAT="$DATA/data/agent-heartbeat.tsv"
 PAUSE_ALL="$DATA/data/PAUSE"
+LIMIT_FILE="$DATA/data/.claude-limit"   # "<reset epoch>\t<CLI message>" while Claude's usage limit is hit
+EX_LIMIT=75                             # claude_run's exit code for "usage limit, try after the reset"
 
 AGENT=""; AGENT_START=0; LOG=""
 
@@ -66,6 +68,19 @@ agent_end() { # summary
 }
 
 agent_fail() { # summary
+  # A run that failed because Claude's usage ran out is not an error: record "wait" once per limit window,
+  # keep whatever the run finished, and let cron resume the agent after the reset.
+  if claude_limited; then
+    local key; key=$(cut -f1 "$LIMIT_FILE")
+    if [[ "$(cat "$LOCK_DIR/$AGENT.limit-noted" 2>/dev/null)" != "$key" ]]; then
+      echo "$key" > "$LOCK_DIR/$AGENT.limit-noted"
+      heartbeat wait "Claude usage limit; resumes after $(claude_limit_until) ($1)"
+      regen_dashboard
+    fi
+    data_push "$AGENT: paused for the Claude usage limit — $1" || true
+    log "$AGENT: waiting for the Claude usage limit (until $(claude_limit_until)) — $1"
+    exit 0
+  fi
   heartbeat error "$1"
   regen_dashboard
   data_push "$AGENT: FAILED — $1" || true
@@ -101,15 +116,27 @@ regen_dashboard() {
 
 # Headless Claude. Usage: claude_run <model> <prompt-file-or-string> [extra claude flags...]
 # Tools are limited to what the modes need; writes are confined by the cwd being $REPO.
+# While a usage limit is recorded and not yet reset, it returns $EX_LIMIT without calling Claude; when the
+# CLI itself reports the limit, it records it (claude-limit.mjs) and returns $EX_LIMIT.
+claude_limited()     { node "$REPO/scripts/lenovo/claude-limit.mjs" active "$LIMIT_FILE" >/dev/null 2>&1; }
+claude_limit_until() { node "$REPO/scripts/lenovo/claude-limit.mjs" show "$LIMIT_FILE" 2>/dev/null; }
+# note_claude_limit <output-file> [--any]: exit 0 when the output holds the CLI's limit message (now recorded).
+note_claude_limit()  { node "$REPO/scripts/lenovo/claude-limit.mjs" record "$1" "$LIMIT_FILE" ${2:-} >>"$LOG" 2>&1; }
 claude_run() {
   local model="$1" prompt="$2"; shift 2
+  if claude_limited; then log "claude: usage limit until $(claude_limit_until); not calling"; return $EX_LIMIT; fi
   [[ -f "$prompt" ]] && prompt="$(cat "$prompt")"
+  local out; out=$(mktemp)
   local directive="Write all human-facing output in English. The Data Root is $DATA (resolve every user-layer file — cv.md, config/profile.yml, modes/_profile.md, modes/_custom.md, data/, reports/, output/, interview-prep/ — relative to it). This is an unattended headless run: never ask questions; if blocked, write what you have and stop."
   claude -p --model "$model" \
     --append-system-prompt "$directive" \
     --allowedTools "Read" "Write" "Edit" "Glob" "Grep" "WebFetch" "WebSearch" "Bash(node:*)" "Bash(ls:*)" "Bash(cat:*)" "Bash(grep:*)" "Bash(mkdir:*)" \
     --add-dir "$DATA" \
-    "$@" "$prompt" 2>>"$LOG"
+    "$@" "$prompt" 2>&1 | tee "$out"
+  local rc=${PIPESTATUS[0]}
+  # The CLI's limit message is a whole short output (record checks), whatever the exit code was.
+  if note_claude_limit "$out"; then rm -f "$out"; return $EX_LIMIT; fi
+  rm -f "$out"; return $rc
 }
 
 # Count tracker rows in a given status (canonical table at $DATA/data/applications.md)
