@@ -188,12 +188,17 @@ async function add() {
   // narrow: no writer can observe the file until the creator has released, and
   // the creator writes the header before it releases. 'wx' above stays as the
   // guard against writers that are not this function.
+  let duplicate = false;
   await withPipelineLock(PATH, () => {
     ensureFile();
+    // A scheduled agent re-reading the same email would queue it again every
+    // run; an identical pending request adds nothing, so it is skipped.
+    duplicate = parseItems().some((it) => !it.done && it.text.replace(/^\S+ \S+ — /, '') === text);
+    if (duplicate) return;
     const separator = needsLeadingNewline(PATH) ? '\n' : '';
     appendFileSync(PATH, `${separator}- [ ] ${stamp()} — ${text}\n`);
   }, { timeoutMs: 30_000 });
-  process.stdout.write(`Queued: ${text}\n`);
+  process.stdout.write(duplicate ? `Already queued: ${text}\n` : `Queued: ${text}\n`);
 }
 
 function list() {
