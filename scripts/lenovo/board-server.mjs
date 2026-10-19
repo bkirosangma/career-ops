@@ -7,6 +7,8 @@
 // GET  /api/version                → {"version": "<hash of the current board>"}
 // GET  /api/events                 → Server-Sent Events: "version" whenever the board changes
 //                                    (data files watched + a 15 s tick for running-agent progress)
+// GET  /learn, /learn/<slug>, /learn/<slug>/<n> → the Learn page (learn-html.mjs), rendered per request
+// POST /api/learn/progress {"slug","n","done"} → mark a study module studied / not studied (data/learn-progress.json)
 // GET  /<path>                    → static files from the Data Root (reports/, output/, data/freelance/outreach/)
 // POST /api/send   {"draft": "<file>.md"}   → send that outreach draft by email, log it, move it to outreach/sent/
 // POST /api/approve {"draft": "<file>.md"}  → mark a platform draft as "sent by me in-app" (log + move), no email
@@ -27,6 +29,9 @@ import { fileURLToPath } from 'node:url';
 import { getCareerOpsRoot } from '../../path-resolver.mjs';
 import { collect, render } from '../../dashboard-html.mjs';
 import { collectRunning } from './live-state.mjs';
+import { collectTracker } from '../../dashboard-html.mjs';
+import { collectLearn, nextToStudy, nextJob, readProgress } from '../../learn-state.mjs';
+import { renderLearnHome, renderSubject, renderModule, renderNotFound } from '../../learn-html.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const args = process.argv.slice(2);
@@ -195,6 +200,36 @@ function startWatching() {
   setInterval(() => { for (const res of clients) res.write(': ping\n\n'); }, 25000);  // keep proxies/phones from idling the stream out
 }
 
+// ---- Learn --------------------------------------------------------------------------------------
+function learnNow() {
+  const rows = collectTracker(existsSync(path.join(ROOT, 'data', 'applications.md')) ? readFileSync(path.join(ROOT, 'data', 'applications.md'), 'utf8') : '').rows;
+  const rowsByNum = new Map(rows.map((r) => [String(r.num), r]));
+  const learn = collectLearn(ROOT, rowsByNum);
+  return { learn, rowsByNum, tutorJob: nextJob(learn) };
+}
+export function learnPage(pathname) {
+  const parts = pathname.replace(/\/+$/, '').split('/').slice(2).map(decodeURIComponent);   // ['', 'learn', ...]
+  const { learn, rowsByNum, tutorJob } = learnNow();
+  if (!parts.length) return { status: 200, html: renderLearnHome(learn, { next: nextToStudy(learn), tutorJob }) };
+  const s = [...learn.subjects, ...learn.orphans].find((x) => x.slug === parts[0]);
+  if (!s) return { status: 404, html: renderNotFound('There is no subject with that name. The Coach may have renamed it.') };
+  if (parts.length === 1) return { status: 200, html: renderSubject(s, { tutorJob, rowsByNum }) };
+  const m = s.modules.find((x) => String(x.n) === parts[1]);
+  if (!m || !m.written) return { status: 404, html: renderNotFound('That module has not been written yet.') };
+  return { status: 200, html: renderModule(s, m, readFileSync(path.join(ROOT, 'interview-prep', 'learn', s.slug, m.file), 'utf8')) };
+}
+export function saveProgress(root, { slug, n, done }) {
+  if (!/^[\w.-]+$/.test(String(slug || '')) || !Number.isInteger(n) || n < 1) return { status: 400, error: 'bad module' };
+  const file = path.join(root, 'data', 'learn-progress.json');
+  const progress = readProgress(root);
+  const key = `${slug}/${n}`;
+  if (done) progress[key] = new Date().toISOString().slice(0, 10); else delete progress[key];
+  mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(progress, null, 2) + '\n'); renameSync(tmp, file);
+  return { status: 200, result: done ? 'studied' : 'not studied' };
+}
+
 function readBody(req) { return new Promise((res) => { let b = ''; req.on('data', (c) => { b += c; if (b.length > 1e5) req.destroy(); }); req.on('end', () => res(b)); }); }
 
 const server = http.createServer(async (req, res) => {
@@ -206,6 +241,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/send') out = await handleSend(String(body.draft || ''));
     else if (url.pathname === '/api/approve') out = await handleSend(String(body.draft || ''), { approveOnly: true });
     else if (url.pathname === '/api/regenerate') out = { status: 200, result: regenerate() ? 'regenerated' : 'failed' };
+    else if (url.pathname === '/api/learn/progress') return (({ status, ...rest }) => json(status, rest))(saveProgress(ROOT, body));
     else return json(404, { error: 'unknown action' });
     if (out.status === 200) { regenerate(); refreshBoard(); }
     return json(out.status, out);
@@ -215,6 +251,12 @@ const server = http.createServer(async (req, res) => {
     if (Date.now() - board.at > 2000) buildBoard();
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
     return res.end(board.html);
+  }
+  if (url.pathname === '/learn' || url.pathname.startsWith('/learn/')) {
+    let out;
+    try { out = learnPage(url.pathname); } catch (e) { console.error(`learn render failed: ${e.message}`); out = { status: 500, html: renderNotFound(`The Learn page failed to render: ${e.message}`) }; }
+    res.writeHead(out.status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(out.html);
   }
   if (url.pathname === '/api/version') { if (!board.version) buildBoard(); return json(200, { version: board.version }); }
   if (url.pathname === '/api/events') {

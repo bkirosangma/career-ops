@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
-const AGENT_RE = /scripts\/lenovo\/(scout|researcher|writer|watcher|coach|prospector|applier)\.sh(?:\s+(\w+))?/;
+const AGENT_RE = /scripts\/lenovo\/(scout|researcher|writer|watcher|coach|tutor|prospector|applier)\.sh(?:\s+(\w+))?/;
 
 // `ps -eo pid,etimes,args` → { 'scout-boards': { pid, seconds }, researcher: {...} }. Oldest process wins
 // (a cron tick that is about to skip on the lock is younger than the run holding it).

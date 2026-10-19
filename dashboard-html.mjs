@@ -18,11 +18,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { collectLearn } from './learn-state.mjs';
 import { collectApplications, renderApplications, APPLICATIONS_CSS, APPLICATIONS_JS } from './dashboard-applications.mjs';
 
+// Palette, type and base rules shared by the board and the Learn page (learn-html.mjs).
+export const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&family=Big+Shoulders+Display:wght@700&display=swap" rel="stylesheet">`;
+export const THEME_CSS = `:root{--paper:#EEF1EC;--card:#FAFBF8;--ink:#17212B;--slate:#5A6673;--rule:#D4DAD2;--go:#1F7A57;--wait:#A86A12;--stop:#B23B3B;--link:#2B55B8;--tint:#E3E8E1;--go-tint:#DCEBE3;--on-go:#fff;--on-wait:#fff;
+--bg:var(--paper);--mut:var(--slate);--line:var(--rule);--acc:var(--link);--ok:var(--go);--warm:var(--wait);--bad:var(--stop);--chip:var(--tint);
+--num:'Big Shoulders Display','Arial Narrow',sans-serif;--text:'Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--paper:#12171C;--card:#192028;--ink:#E4E8EC;--slate:#93A0AD;--rule:#2A333D;--go:#4CB98A;--wait:#E0A245;--stop:#F07B7B;--link:#8AAEFF;--tint:#222B35;--go-tint:#1D3A2F;--on-go:#0E1A14;--on-wait:#1F1606}}
+:root[data-theme=dark]{--paper:#12171C;--card:#192028;--ink:#E4E8EC;--slate:#93A0AD;--rule:#2A333D;--go:#4CB98A;--wait:#E0A245;--stop:#F07B7B;--link:#8AAEFF;--tint:#222B35;--go-tint:#1D3A2F;--on-go:#0E1A14;--on-wait:#1F1606}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 var(--text);-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-underline-offset:2px}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--link);outline-offset:2px;border-radius:4px}`;
 export const CAPS = { pending: 100, evaluated: 50, ready: 25 };
 export const APPLY_MIN = 2.5;
-const AGENTS = ['scout-boards', 'scout-ats', 'researcher', 'writer', 'applier', 'watcher', 'prospector', 'coach'];
+const AGENTS = ['scout-boards', 'scout-ats', 'researcher', 'writer', 'applier', 'watcher', 'prospector', 'coach', 'tutor'];
 const STATES = ['Evaluated', 'Applied', 'Responded', 'Interview', 'Offer', 'Hired', 'Rejected', 'Discarded', 'SKIP'];
 
 const read = (p) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
@@ -82,6 +93,12 @@ export function collectHeartbeat(text) {
     latest[agent] = { ts, status, seconds: Number(seconds) || 0, note };
   }
   return { latest, history: history.slice(-200).reverse() };
+}
+
+// data/.claude-limit ("<reset epoch>\t<message>", written by scripts/lenovo/claude-limit.mjs) while it has not reset.
+export function collectLimit(text, now = Date.now()) {
+  const until = Number(String(text).split('\t')[0]);
+  return until && until * 1000 > now ? { until: new Date(until * 1000).toISOString().slice(11, 16) + ' UTC' } : null;
 }
 
 export function collectInbox(text) {
@@ -255,8 +272,8 @@ const LIVE_JS = `
 export function render(data, { now = Date.now(), generatedAt = new Date(now).toISOString(), live = false } = {}) {
   const { tracker, pipeline, heartbeat, inbox, freelance, coach, apps = [] } = data;
   const running = data.running || {};
-  const agentState = (a) => { const h = heartbeat.latest[a]; return running[a] ? 'run' : !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'skip' ? 'skip' : 'ok'; };
-  const STATE_WORD = { run: 'Working now', ok: 'Last run fine', skip: 'Nothing to do', error: 'Last run failed', never: 'Never ran' };
+  const agentState = (a) => { const h = heartbeat.latest[a]; return running[a] ? 'run' : !h ? 'never' : h.status === 'error' ? 'error' : h.status === 'wait' ? 'wait' : h.status === 'skip' ? 'skip' : 'ok'; };
+  const STATE_WORD = { run: 'Working now', ok: 'Last run fine', skip: 'Nothing to do', error: 'Last run failed', wait: 'Waiting for the usage limit', never: 'Never ran' };
   const agentRows = AGENTS.map((a) => {
     const h = heartbeat.latest[a];
     const r = running[a];
@@ -275,9 +292,9 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   const needsCount = questions.length + ready.length;
   const pendingRows = pipeline.pending.slice(0, 100).map((p) => `<tr><td>${esc(p.company)}</td><td><a href="${esc(p.url)}" rel="noopener">${esc(p.title || p.url)}</a></td><td>${esc(p.location)}</td><td>${esc(p.posted)}</td></tr>`).join('');
   const rowsByNum = new Map(tracker.rows.map((r) => [String(r.num), r]));
-  const subjects = coach.index.map((x) => ({ ...x, ...impactOf(x, rowsByNum) })).sort((a, b) => b.impact - a.impact || b.live - a.live);
-  const topImpact = Math.max(1, ...subjects.map((x) => x.impact));
-  const coachCards = subjects.map((s) => `<details class="subject ${esc(s.status || '')}"><summary><span class="imp" title="impact ${s.impact}"><b>${Math.round((s.impact / topImpact) * 100)}</b><i style="width:${Math.round((s.impact / topImpact) * 100)}%"></i></span><span class="subj">${esc(s.subject)}</span><span class="tag ${esc(s.status || '')}">${esc(s.status || '')}</span><em>${s.live} live role${s.live === 1 ? '' : 's'}</em></summary><p>${esc(s.why || '')}</p><ul class="apps">${(s.applications || []).map((a) => { const r = rowsByNum.get(String(a.tracker || '').replace(/\D/g, '')); return `<li>${esc(a.tracker || '')} ${esc(a.company || '')}, ${esc(a.role || '')} <em>${esc(r ? r.status : a.status || '')}</em></li>`; }).join('')}</ul><div class="md">${mdLite(coach.files[s.file] || '')}</div></details>`).join('');
+  const learn = data.learn || { subjects: [] };
+  const lWritten = learn.subjects.reduce((a, x) => a + x.written, 0), lStudied = learn.subjects.reduce((a, x) => a + x.studied, 0);
+  const learnTop = learn.subjects.slice(0, 3).map((x) => `<li><a href="/learn/${esc(x.slug)}">${esc(x.subject)}</a> <span class="tag ${esc(x.status || '')}">${esc(x.status || '')}</span><em>${x.plan ? `${x.studied} of ${x.modules.length} studied` : 'not planned yet'}</em></li>`).join('');
   const draftCards = freelance.drafts.map((d) => {
     const isEmail = /^email$/i.test(d.channel) && /@/.test(d.to);
     const action = isEmail
@@ -291,17 +308,10 @@ export function render(data, { now = Date.now(), generatedAt = new Date(now).toI
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Career Ops</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Next:wght@400;700&family=Big+Shoulders+Display:wght@700&display=swap" rel="stylesheet">
+${FONT_LINKS}
 ${live ? '<script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph.min.js"></script>' : '<meta http-equiv="refresh" content="300">'}
 <style>
-:root{--paper:#EEF1EC;--card:#FAFBF8;--ink:#17212B;--slate:#5A6673;--rule:#D4DAD2;--go:#1F7A57;--wait:#A86A12;--stop:#B23B3B;--link:#2B55B8;--tint:#E3E8E1;--go-tint:#DCEBE3;--on-go:#fff;--on-wait:#fff;
---bg:var(--paper);--mut:var(--slate);--line:var(--rule);--acc:var(--link);--ok:var(--go);--warm:var(--wait);--bad:var(--stop);--chip:var(--tint);
---num:'Big Shoulders Display','Arial Narrow',sans-serif;--text:'Atkinson Hyperlegible Next','Atkinson Hyperlegible',system-ui,sans-serif}
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--paper:#12171C;--card:#192028;--ink:#E4E8EC;--slate:#93A0AD;--rule:#2A333D;--go:#4CB98A;--wait:#E0A245;--stop:#F07B7B;--link:#8AAEFF;--tint:#222B35;--go-tint:#1D3A2F;--on-go:#0E1A14;--on-wait:#1F1606}}
-:root[data-theme=dark]{--paper:#12171C;--card:#192028;--ink:#E4E8EC;--slate:#93A0AD;--rule:#2A333D;--go:#4CB98A;--wait:#E0A245;--stop:#F07B7B;--link:#8AAEFF;--tint:#222B35;--go-tint:#1D3A2F;--on-go:#0E1A14;--on-wait:#1F1606}
-*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 var(--text);-webkit-font-smoothing:antialiased}
-a{color:var(--link);text-underline-offset:2px}a:focus-visible,button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--link);outline-offset:2px;border-radius:4px}
+${THEME_CSS}
 main{max-width:1280px;margin:0 auto;padding:20px 16px 64px}
 header{margin:4px 0 18px}h1{font:700 30px/1 var(--num);letter-spacing:.01em;margin:0 0 6px}.lede{margin:0;font-size:18px;max-width:70ch}.stamp{color:var(--slate);font-size:14px}
 h2{font-size:18px;font-weight:700;margin:0 0 12px;display:flex;align-items:baseline;gap:8px}h3{font-size:15px;font-weight:700;margin:16px 0 6px;color:var(--slate)}h4{font-size:15px;margin:12px 0 4px}
@@ -359,7 +369,13 @@ ${APPLICATIONS_CSS}
 .live{position:fixed;right:12px;bottom:12px;z-index:9;font-size:13px;padding:5px 11px;border-radius:999px;background:var(--card);border:1px solid var(--rule);color:var(--slate)}.live.on{color:var(--go)}.live.off{color:var(--wait)}
 tr.run td:first-child{color:var(--link);font-weight:700}.spin{display:inline-block;width:10px;height:10px;margin-right:6px;border:2px solid var(--link);border-right-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-1px}@keyframes sp{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.spin,.ag-run::before{animation:none}}
+.topnav{display:flex;gap:6px;margin:0 0 6px}.topnav .nav{padding:5px 12px;border-radius:8px;color:var(--slate);text-decoration:none;font-weight:700;font-size:15px}.topnav .nav:hover{background:var(--tint);color:var(--ink)}.topnav .nav[aria-current=page]{background:var(--ink);color:var(--paper)}
+.limit{margin:0 0 14px;padding:10px 14px;border-left:3px solid var(--wait);background:var(--tint);border-radius:0 8px 8px 0;font-size:15px}
+.ag-wait{color:var(--wait);font-weight:700}.ag-wait::before{background:var(--wait)}tr.wait td:first-child,tr.wait td:nth-child(2){color:var(--wait);font-weight:700}
+.learn-top{list-style:none;padding:0;margin:0}.learn-top li{padding:8px 0;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}.learn-top li:last-child{border-bottom:0}.learn-top a{font-weight:700}
 </style></head><body>${live ? '<div id="live" class="live">● connecting…</div>' : ''}<main>
+<nav class="topnav" aria-label="Pages"><a class="nav" href="/" aria-current="page">Board</a><a class="nav" href="/learn">Learn</a></nav>
+${data.limit ? `<p class="limit" role="status">Claude's usage limit is reached. Agents that use Claude are paused and resume after ${esc(data.limit.until)}.</p>` : ''}
 <header><h1>Career Ops</h1><p class="lede">${ready.length ? `${ready.length} role${ready.length > 1 ? 's are' : ' is'} ready for you to apply to` : 'No roles are waiting on you'}${questions.length ? `, and ${questions.length} question${questions.length > 1 ? 's need' : ' needs'} an answer` : ''}.${live && Object.keys(running).length ? ` ${Object.keys(running).length} agent${Object.keys(running).length > 1 ? 's are' : ' is'} working.` : ''}${live ? '' : ` <span class="stamp">Snapshot from ${esc(generatedAt.slice(0, 16).replace('T', ' '))}</span>`}</p></header>
 
 ${tabbed('ops', [
@@ -374,7 +390,7 @@ ${questions.length ? `<h3>Questions</h3><ul class="qs">${questions.join('')}</ul
 ${ready.length ? `<h3>Apply next</h3><ol class="nxs">${applyNext}</ol>${ready.length > 5 ? `<p class="more-link"><a href="#applications">All ${ready.length} ready roles</a></p>` : ''}` : ''}
 ${needsCount ? '' : '<p class="empty">Nothing is waiting on you. New fit roles show up here as soon as their CV is ready.</p>'}
 </section>
-<section id="learn"><h2>Learn</h2>${coach.index.length ? `<p class="hint">Subjects ranked by impact, out of 100 for the top one. Impact grows with how many live roles need the subject, how well those roles fit, and how close they are to an interview. Gaps count more than refreshers, and strengths least.</p>${coachCards}` : '<p class="empty">The Coach builds this list every night from your active roles.</p>'}${coach.summary ? `<details class="notes-md"><summary>Coach’s notes for this week</summary><div class="md">${mdLite(coach.summary)}</div></details>` : ''}</section>
+<section id="learn"><h2>Learn</h2>${learn.subjects.length ? `<p class="hint">${lWritten} study module${lWritten === 1 ? '' : 's'} written, ${lStudied} studied. Top subjects by impact:</p><ul class="learn-top">${learnTop}</ul>` : '<p class="empty">The Coach picks subjects every night from your active roles, and the Tutor writes study modules for them.</p>'}<p class="more-link"><a href="/learn">Open Learn</a></p></section>
 </div>
 <div class="col">
 ${renderFlow(data)}
@@ -440,6 +456,8 @@ function collectBase(root) {
 
 function collectAll(root) {
   const d = collectBase(root);
+  try { d.learn = collectLearn(root, new Map(d.tracker.rows.map((r) => [String(r.num), r]))); } catch (e) { console.error(`learn view failed: ${e.message}`); d.learn = { subjects: [] }; }
+  d.limit = collectLimit(read(path.join(root, 'data', '.claude-limit')));
   try { d.apps = collectApplications(root, d.tracker.rows); } catch (e) { console.error(`applications view failed: ${e.message}`); d.apps = []; }
   return d;
 }
