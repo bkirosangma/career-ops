@@ -7,4 +7,5 @@ Context for this unattended run:
 - Append to the report a short `## CV` section: PDF path, keyword coverage %, missing/thin keywords, ATS score.
 - Update the tracker row's PDF column to ✅ via the project's canonical path (merge-tracker / set-status conventions; never hand-edit the table).
 - The apply threshold is Global ≥ 2.5 (house rule, modes/_custom.md). Do not refuse to generate on fit grounds; the decision was made upstream.
+- If `output/` already holds a CV for report __REPORT__, it is stale (cv.md changed after it was written, or its PDF is missing): regenerate it from the current cv.md and delete the older HTML/PDF for this report, so only the new pair remains.
 - Never ask questions; if a hard gate fails (fact check), write the failure into the report `## CV` section and stop without producing a PDF.
