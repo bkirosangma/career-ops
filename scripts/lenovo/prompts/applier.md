@@ -10,6 +10,7 @@ For each item write `draft` (the only files you write), in this shape:
 
 ## Before you start
 - Posting check: <item.liveness>.
+- No-AI rule: if the JD or the employer's careers page asks candidates not to use AI tools for the application, say so in a line starting "No AI:" and write each free-text answer as fact notes (bullets of what to mention, from the sources below), never as finished prose to paste. Video answers are always the candidate's own.
 - <one line each, only when true: blacklisted (item.blacklisted); other rows at this company (item.sameCompany, and whether the ATS may allow only one application); anything in the report's legitimacy block worth knowing>.
 
 ## Form answers
