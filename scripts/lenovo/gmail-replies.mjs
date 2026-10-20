@@ -33,6 +33,18 @@ export function buildQuery(days) {
   return `newer_than:${days}d -from:me -category:promotions -category:social -category:forums ${excl} (${from} OR ${subj} OR ${body})`;
 }
 
+// LinkedIn lane. The main query drops linkedin.com and the Social tab (digests, "X is popular in your
+// network", "2 people noticed you", all from the same messages-noreply sender as real message mail), so
+// LinkedIn gets its own narrow query: only the notification subjects for a person messaging you (a
+// recruiter's message or InMail) or accepting your invitation. LinkedIn sends these only when message
+// emails are on (Settings → Notifications → Messaging → Email); a snippet and a thread link, never the
+// full conversation. Read-only like the rest: no LinkedIn login, no automation of linkedin.com.
+const LINKEDIN_SUBJECTS = ['sent you a message', 'sent you a new message', 'new message from', 'messaged you', 'replied to your', 'sent you an InMail', 'InMail', 'accepted your invitation'];
+export function buildLinkedInQuery(days) {
+  const subj = LINKEDIN_SUBJECTS.map((t) => (t.includes(' ') ? `subject:"${t}"` : `subject:${t}`)).join(' OR ');
+  return `newer_than:${days}d from:linkedin.com -from:jobs-noreply@linkedin.com -from:jobalerts-noreply@linkedin.com (${subj})`;
+}
+
 export function headersToMap(headers = []) {
   return Object.fromEntries(headers.map((h) => [h.name.toLowerCase(), h.value]));
 }
@@ -88,8 +100,13 @@ async function main() {
   const token = await accessToken();
   const H = { authorization: `Bearer ${token}` };
   const api = 'https://gmail.googleapis.com/gmail/v1/users/me';
-  const list = await (await fetch(`${api}/messages?maxResults=${max}&q=${encodeURIComponent(buildQuery(days))}`, { headers: H })).json();
-  if (list.error) throw new Error(`gmail list: ${list.error.message}`);
+  const lists = [];
+  for (const q of [buildQuery(days), buildLinkedInQuery(days)]) {
+    const r = await (await fetch(`${api}/messages?maxResults=${max}&q=${encodeURIComponent(q)}`, { headers: H })).json();
+    if (r.error) throw new Error(`gmail list: ${r.error.message}`);
+    lists.push(...(r.messages || []));
+  }
+  const list = { messages: [...new Map(lists.map((m) => [m.id, m])).values()] };
   let added = 0, skipped = 0;
   for (const m of list.messages || []) {
     if (seen.has(m.id)) { skipped++; continue; }

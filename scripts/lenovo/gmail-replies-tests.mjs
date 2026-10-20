@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildQuery, extractBody, toCandidate } from './gmail-replies.mjs';
+import { buildQuery, buildLinkedInQuery, extractBody, toCandidate } from './gmail-replies.mjs';
 const b64 = (s) => Buffer.from(s).toString('base64url');
 test('query is bounded to inbound recent mail and ATS/reply shapes', () => {
   const q = buildQuery(3);
@@ -16,4 +16,10 @@ test('extractBody prefers text/plain parts and strips html fallback', () => {
 test('toCandidate matches paste-reply shape with a gmail-keyed id', () => {
   const c = toCandidate({ id: 'abc', threadId: 't1', snippet: 's', payload: { headers: [{ name: 'From', value: 'r@x.io' }, { name: 'Subject', value: 'Interview' }, { name: 'Date', value: 'Thu, 16 Oct 2026 10:00:00 +0000' }], body: { data: b64('body') } } });
   assert.equal(c.message_id, 'gmail-abc'); assert.equal(c.from, 'r@x.io'); assert.equal(c.subject, 'Interview'); assert.equal(c.body_snippet, 'body'); assert.equal(c.signal, null); assert.equal(c.received_at, '2026-10-16T10:00:00.000Z');
+});
+test('LinkedIn lane asks only for message and accepted-invite notifications', () => {
+  const q = buildLinkedInQuery(3);
+  assert.match(q, /^newer_than:3d from:linkedin\.com /); assert.match(q, /subject:"accepted your invitation"/); assert.match(q, /subject:InMail/);
+  assert.doesNotMatch(q, /noticed|popular/); assert.match(q, /-from:jobs-noreply@linkedin\.com/);
+  assert.match(buildQuery(3), /-from:linkedin\.com/);
 });
