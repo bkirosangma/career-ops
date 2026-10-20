@@ -70,6 +70,13 @@ done < "$BATCH/tmp-dead.tsv"
 node scripts/lenovo/scout-queue.mjs refill --cap 100 >>"$LOG" 2>&1 || true
 # Seed follow-ups + status ledger are handled by set-status/outcome paths; nothing to do here.
 
+# A priority row (score ≥ 4.0, or ≥ the best Ready row) gets its CV now rather than at the next Writer tick.
+# The Writer's own lock makes this a no-op when a run is already going (it picks the highest score next).
+if (( $(priority_waiting 2.5) > 0 )); then
+  log "priority row scored: starting the Writer"
+  setsid -f nohup bash "$REPO/scripts/lenovo/writer.sh" >/dev/null 2>&1 </dev/null || log "WARN: could not start the Writer"
+fi
+
 # A batch the runner paused on the usage limit: record the reset from a worker log, so every agent waits.
 paused_limit=0
 for f in $(find "$BATCH/logs" -name '*.log' -newer "$BATCH/.run-start" 2>/dev/null); do

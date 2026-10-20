@@ -5,7 +5,9 @@
 #   highest score first and re-reading the tracker each time, so rows the Researcher adds mid-run are
 #   picked up. The agent lock keeps runs from overlapping; a row that fails is not retried in the same run.
 # Cap: stops while "Ready to apply" (Evaluated ≥ APPLY_MIN with a CV) holds READY_CAP rows (25, ruled
-#   2026-10-17); applying frees a slot and the next run carries on.
+#   2026-10-17); applying frees a slot and the next run carries on. Exception (ruled 2026-10-20): priority
+#   rows (score ≥ 4.0, or ≥ the best Ready row; lib.sh priority_floor) are written even when Ready is full,
+#   and the Researcher starts a run as soon as it scores one, so their CV comes right away.
 # Redo:  writer.sh --only "80 67 69"  rewrites exactly those rows' CVs (stale or missing PDF), whatever
 #   their PDF mark, ignoring the cap — e.g. when cv.md changed after the CV was written.
 source "$(dirname "$0")/lib.sh"
@@ -18,7 +20,7 @@ READY_CAP="${READY_CAP:-25}"
 
 # next_row: num<TAB>score<TAB>report-file of the best Evaluated row ≥ APPLY_MIN with PDF ❌, skipping $SKIP
 next_row() {
-  awk -F'|' -v min="$APPLY_MIN" -v skip=" $SKIP " -v only="$ONLY" '
+  awk -F'|' -v min="$FLOOR" -v skip=" $SKIP " -v only="$ONLY" '
     NR>3 && $2 ~ /[0-9]/ {
       num=$2; score=$6; status=$7; pdf=$8; rep=$9
       gsub(/^ +| +$/,"",num); gsub(/^ +| +$/,"",status); gsub(/^ +| +$/,"",pdf); gsub(/^ +| +$/,"",score)
@@ -32,9 +34,19 @@ next_row() {
     }' "$TRACKER" | sort -t$'\t' -k2,2nr | head -n 1
 }
 
+# FLOOR: the lowest score this pick may take: APPLY_MIN, or the priority floor while Ready is full.
+set_floor() {
+  FLOOR="$APPLY_MIN"
+  [[ -z "$ONLY" ]] && (( $(ready_count "$APPLY_MIN") >= READY_CAP )) && FLOOR=$(priority_floor "$APPLY_MIN")
+  return 0
+}
 SKIP=""
 ready=$(ready_count "$APPLY_MIN")
-if [[ -z "$ONLY" ]] && (( ready >= READY_CAP )); then heartbeat skip "ready to apply full ($ready/$READY_CAP)"; log "ready queue full ($ready/$READY_CAP)"; exit 0; fi
+set_floor
+if [[ "$FLOOR" != "$APPLY_MIN" ]]; then
+  if (( $(priority_waiting "$APPLY_MIN") == 0 )); then heartbeat skip "ready to apply full ($ready/$READY_CAP)"; log "ready queue full ($ready/$READY_CAP)"; exit 0; fi
+  log "ready queue full ($ready/$READY_CAP); writing priority rows only (score ≥ $FLOOR)"
+fi
 row=$(next_row)
 if [[ -z "$row" ]]; then heartbeat skip "no Evaluated rows ≥$APPLY_MIN without PDF${ONLY:+ in [$ONLY]}"; log "nothing to write"; exit 0; fi
 
@@ -62,11 +74,11 @@ while [[ -n "$row" ]]; do
   # A row whose PDF is still ❌ after its turn (failed, or the model stopped short) is not retried this run.
   SKIP="$SKIP $num"
   regen_dashboard; data_push "writer: CV for #$num" || true   # each CV reaches the board and the Mac right away
-  ready=$(ready_count "$APPLY_MIN")
-  if [[ -z "$ONLY" ]] && (( ready >= READY_CAP )); then log "ready queue full ($ready/$READY_CAP), stopping"; break; fi
+  set_floor
   # The kill switch (data/PAUSE) stops a run between CVs, not only at the next cron tick: one run can drain
   # the whole queue for hours (2026-10-19, a data-repo repair waited on it).
   if [[ -f "$PAUSE_ALL" ]]; then log "paused ($PAUSE_ALL), stopping after #$num"; break; fi
   row=$(next_row)
+  [[ -z "$row" && "$FLOOR" != "$APPLY_MIN" ]] && log "ready queue full ($(ready_count "$APPLY_MIN")/$READY_CAP), no priority rows left, stopping"
 done
 agent_end "CVs generated $done_n, failed $fail_n; ready $(ready_count "$APPLY_MIN")/$READY_CAP"

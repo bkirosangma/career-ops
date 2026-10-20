@@ -153,6 +153,19 @@ _bar_count() { # min-score pdf-mark
 fit_count()   { _bar_count "${1:-2.5}" "❌"; }
 ready_count() { _bar_count "${1:-2.5}" "✅"; }
 
+# Priority rows skip the Ready cap and get their CV first (ruled 2026-10-20): a score ≥ PRIORITY_MIN (4.0),
+# or a score ≥ the best row already in Ready to apply. priority_floor is the lower of the two bars.
+ready_best() { # min-score → best score among Ready rows (0 when none)
+  awk -F'|' -v min="${1:-2.5}" 'NR>3 && $2 ~ /[0-9]/ { s=$7; gsub(/^ +| +$/,"",s); sc=$6; gsub(/^ +|\/.*$/,"",sc); p=$8; gsub(/^ +| +$/,"",p); if (s=="Evaluated" && sc+0>=min && p=="✅" && sc+0>b) b=sc+0 } END { print b+0 }' "$DATA/data/applications.md"
+}
+priority_floor() { # min-score
+  local best; best=$(ready_best "${1:-2.5}")
+  awk -v p="${PRIORITY_MIN:-4.0}" -v b="$best" 'BEGIN { print (b > 0 && b < p) ? b : p }'
+}
+priority_waiting() { # min-score → Fit rows (no CV yet) at or above priority_floor
+  _bar_count "$(priority_floor "${1:-2.5}")" "❌"
+}
+
 # Count "## Pending" bullet entries in pipeline.md
 pending_count() {
   awk '/^## Pending/{p=1;next} /^## /{p=0} p && /^- /{n++} END{print n+0}' "$DATA/data/pipeline.md"
