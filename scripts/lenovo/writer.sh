@@ -40,6 +40,22 @@ set_floor() {
   [[ -z "$ONLY" ]] && (( $(ready_count "$APPLY_MIN") >= READY_CAP )) && FLOOR=$(priority_floor "$APPLY_MIN")
   return 0
 }
+# Watermark pass on the CV the model just wrote (the prose was already humanized in the run): strip invisible
+# Unicode from the HTML, re-render the PDF from the cleaned HTML when anything was removed, then clean the
+# PDF's provenance metadata. Deterministic, no model call.
+clean_cv() { # num
+  local html pdf
+  html=$(ls -t "$DATA"/output/cv-*-"$1".html 2>/dev/null | head -1)
+  pdf=$(ls -t "$DATA"/output/cv-*-"$1"-*.pdf 2>/dev/null | head -1)
+  [[ -n "$html" && -n "$pdf" ]] || { log "WARN: no CV pair found for #$1 to clean"; return 0; }
+  if strip_ai_marks "$html"; then
+    node "$REPO/generate-pdf.mjs" "$html" "$pdf" --report="$1" >>"$LOG" 2>&1 || log "WARN: PDF re-render after cleaning failed for #$1"
+  fi
+  strip_pdf_marks "$pdf" || true
+  return 0
+}
+[[ -f "$HUMANIZER_SKILL" ]] || log "WARN: Humanizer skill missing ($HUMANIZER_SKILL); CVs are written without it"
+
 SKIP=""
 ready=$(ready_count "$APPLY_MIN")
 set_floor
@@ -59,8 +75,8 @@ while [[ -n "$row" ]]; do
   IFS=$'\t' read -r num score repfile <<<"$row"
   echo "$num" > "$INPROG"
   log "CV for #$num (score $score) — $repfile"
-  sed -e "s#__REPORT__#$num#g" -e "s#__REPORT_FILE__#$repfile#g" "$REPO/scripts/lenovo/prompts/writer.md" > "$LOG_DIR/.writer-prompt-$num.md"
-  run_with_timeout 25m claude_run "$MODEL_OPUS" "$LOG_DIR/.writer-prompt-$num.md" --max-turns 60 >>"$LOG" 2>&1
+  sed -e "s#__REPORT__#$num#g" -e "s#__REPORT_FILE__#$repfile#g" -e "s#__HUMANIZER__#$HUMANIZER_SKILL#g" "$REPO/scripts/lenovo/prompts/writer.md" > "$LOG_DIR/.writer-prompt-$num.md"
+  run_with_timeout 25m claude_run "$MODEL_OPUS" "$LOG_DIR/.writer-prompt-$num.md" --max-turns 60 --add-dir "$(dirname "$HUMANIZER_SKILL")" >>"$LOG" 2>&1
   rc=$?
   rm -f "$LOG_DIR/.writer-prompt-$num.md"
   if (( rc == EX_LIMIT )); then   # out of Claude usage: #$num stays ❌ and is first in line after the reset
@@ -68,6 +84,7 @@ while [[ -n "$row" ]]; do
     agent_fail "stopped at #$num; CVs generated $done_n, failed $fail_n"
   elif (( rc == 0 )); then
     done_n=$((done_n+1))
+    clean_cv "$num"
   else
     fail_n=$((fail_n+1)); log "WARN: writer failed for #$num"
   fi

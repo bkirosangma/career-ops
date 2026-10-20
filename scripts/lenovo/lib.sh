@@ -166,6 +166,33 @@ priority_waiting() { # min-score → Fit rows (no CV yet) at or above priority_f
   _bar_count "$(priority_floor "${1:-2.5}")" "❌"
 }
 
+# Text hygiene for anything that reaches an employer (ruled 2026-10-20): the Humanizer skill rewrites the prose
+# (github.com/blader/humanizer), then watermarks-remover's Layer A strips invisible Unicode carriers
+# (github.com/guillaumemeyer/watermarks-remover, stdlib Python, no network). Both are installed per machine.
+HUMANIZER_SKILL="${HUMANIZER_SKILL:-$HOME/.claude/skills/humanizer/SKILL.md}"
+WMR_SCRIPTS="${WMR_SCRIPTS:-$HOME/.local/share/watermarks-remover/service/scripts}"
+# strip_ai_marks <file>: cleans the file in place. Exit 0 = changed, 1 = already clean, 2 = cleaner missing or failed.
+strip_ai_marks() {
+  local f="$1" tmp stats n
+  [[ -f "$WMR_SCRIPTS/clean_text.py" ]] || { log "WARN: watermarks-remover not installed ($WMR_SCRIPTS); $f not cleaned"; return 2; }
+  tmp=$(mktemp)
+  if ! stats=$(python3 "$WMR_SCRIPTS/clean_text.py" "$f" -o "$tmp" --stats 2>&1 >/dev/null); then
+    rm -f "$tmp"; log "WARN: clean_text failed for $f: ${stats:0:200}"; return 2
+  fi
+  n=$(printf '%s' "$stats" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["removed_count"]+d["replaced_count"]+int(d["nfkc_changed"]))' 2>/dev/null || echo 0)
+  if (( n > 0 )); then cat "$tmp" > "$f"; rm -f "$tmp"; log "strip_ai_marks: $n invisible/odd characters removed from $(basename "$f")"; return 0; fi
+  rm -f "$tmp"; return 1
+}
+# strip_pdf_marks <pdf>: removes AI provenance metadata (C2PA, generator XMP) in place when there is any.
+strip_pdf_marks() {
+  local f="$1" tmp
+  [[ -f "$WMR_SCRIPTS/clean_file.py" ]] || return 2
+  tmp="$(mktemp -u).pdf"
+  python3 "$WMR_SCRIPTS/clean_file.py" "$f" -o "$tmp" -q >>"$LOG" 2>&1 || { rm -f "$tmp"; log "WARN: clean_file failed for $f"; return 2; }
+  if [[ -s "$tmp" ]] && ! cmp -s "$f" "$tmp"; then mv "$tmp" "$f"; log "strip_pdf_marks: metadata cleaned in $(basename "$f")"; return 0; fi
+  rm -f "$tmp"; return 1
+}
+
 # Count "## Pending" bullet entries in pipeline.md
 pending_count() {
   awk '/^## Pending/{p=1;next} /^## /{p=0} p && /^- /{n++} END{print n+0}' "$DATA/data/pipeline.md"
