@@ -23,7 +23,7 @@ const EXCLUDE_SENDERS = ['github.com', 'gitlab.com', 'atlassian.net', 'slack.com
 const SUBJECT_TERMS = ['application', 'interview', 'your application', 'position', 'role', 'opportunity', 'next steps', 'assessment', 'offer', 'thank you for applying', 'thank you for your interest', 'your interest in', 'candidacy', 'unfortunately', 'moving forward', 'schedule', 'availability', 'recruiter', 'hiring', 'update'];
 // Employer mail from a company's own domain (careers@twilio.com, "Thank you for your interest") matches
 // neither the ATS senders nor a telling subject, so also match the decision phrases in the body.
-const BODY_PHRASES = ['not to move forward', 'not be moving forward', 'not moving forward', 'unable to move forward', 'decided to move forward with other', 'your candidacy', 'received your application', 'schedule an interview', 'next stage', 'regret to inform'];
+const BODY_PHRASES = ['not to move forward', 'not be moving forward', 'not moving forward', 'unable to move forward', 'decided to move forward with other', 'move forward with candidates', 'move forward with other candidates', 'your candidacy', 'received your application', 'schedule an interview', 'next stage', 'regret to inform'];
 
 export function buildQuery(days) {
   const from = ATS_SENDERS.map((d) => `from:${d}`).join(' OR ');
