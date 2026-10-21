@@ -60,11 +60,16 @@ mkdir -p "$DATA/batch" && cp -f "$BATCH/batch-state.tsv" "$DATA/batch/batch-stat
 node reconcile-pipeline.mjs >>"$LOG" 2>&1 || log "WARN: reconcile-pipeline"
 # Failed / held leads are never re-picked (the URL filter above skips batch-state), so take them out of
 # Pending — logged in data/scout/dropped.tsv — and let the refill hand their slots to fresh leads.
-# Held ones (needs_confirmation) also go to the inbox: they need the user's answer.
+# Held ones (needs_confirmation) also go to the inbox: they need the user's answer. Except an agency posting
+# whose end employer is hidden: Kiro skips those outright (ruled 2026-10-21), so it is dropped with that reason
+# and never reaches "Needs you". The worker's question is free text, so this reads its wording; an agency post
+# that names its end client still goes to the inbox.
+HIDDEN_EMPLOYER_RE='unnamed|not named|without naming|no (end )?(employer|client) (is )?(named|identified|disclosed)|employer[^.]{0,40}(is )?hidden|hidden employer|undisclosed|confidential client|end (employer|client) (is )?(not|un)'
 awk -F'\t' 'NR>1 && ($3=="failed" || $3=="needs_confirmation") {print $2 "\t" $3 ": " $8}' "$BATCH/batch-state.tsv" > "$BATCH/tmp-dead.tsv"
 node scripts/lenovo/scout-queue.mjs prune "$BATCH/tmp-dead.tsv" >>"$LOG" 2>&1 || log "WARN: prune"
 while IFS=$'\t' read -r u why; do
   [[ "$why" == needs_confirmation* ]] || continue
+  if grep -qiE "$HIDDEN_EMPLOYER_RE" <<<"$why"; then log "skipped $u: agency posting, end employer hidden"; continue; fi
   grep -qF "$u" "$CAREER_OPS_INBOX" 2>/dev/null || node agent-inbox.mjs add "Researcher held $u — ${why#needs_confirmation: }" >>"$LOG" 2>&1 || true
 done < "$BATCH/tmp-dead.tsv"
 node scripts/lenovo/scout-queue.mjs refill --cap 100 >>"$LOG" 2>&1 || true
