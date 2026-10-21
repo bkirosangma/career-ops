@@ -12,6 +12,6 @@ PATH=/home/kiro/.local/bin:/usr/local/bin:/usr/bin:/bin
 40  *   * * *    __REPO__/scripts/lenovo/applier.sh      >/dev/null 2>&1   # Applier: application packets for ready roles, ≤5 a run (Sonnet); you submit from the Mac
 25  */4 * * *    __REPO__/scripts/lenovo/prospector.sh   >/dev/null 2>&1   # Prospector: freelance leads + first contact
 50  *   * * *    __REPO__/scripts/lenovo/coach.sh        >/dev/null 2>&1   # Coach: subjects for Learn, once a day from 02:50 (hourly retry after a usage limit) (Opus)
-15  */2 * * *    __REPO__/scripts/lenovo/tutor.sh        >/dev/null 2>&1   # Tutor: one 90-min study module per run (Opus)
+*/5 *   * * *    __REPO__/scripts/lenovo/tutor.sh        >/dev/null 2>&1   # Tutor: modules back to back, no wait; relaunched within 5 min if stopped (Opus)
 @reboot          __REPO__/scripts/lenovo/serve-dashboard.sh >/dev/null 2>&1
 */5 *   * * *    __REPO__/scripts/lenovo/serve-dashboard.sh >/dev/null 2>&1   # Board: restart if it died (no-op while running)
