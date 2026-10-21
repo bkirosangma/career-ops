@@ -132,7 +132,7 @@ claude_run() {
     --append-system-prompt "$directive" \
     --allowedTools "Read" "Write" "Edit" "Glob" "Grep" "WebFetch" "WebSearch" "Bash(node:*)" "Bash(ls:*)" "Bash(cat:*)" "Bash(grep:*)" "Bash(mkdir:*)" \
     --add-dir "$DATA" \
-    "$@" "$prompt" 2>&1 | tee "$out"
+    "$@" <<<"$prompt" 2>&1 | tee "$out"  # prompt on stdin: a variadic flag in "$@" (--add-dir) would swallow a trailing argument
   local rc=${PIPESTATUS[0]}
   # The CLI's limit message is a whole short output (record checks), whatever the exit code was.
   if note_claude_limit "$out"; then rm -f "$out"; return $EX_LIMIT; fi
